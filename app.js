@@ -70,6 +70,9 @@ let currentPortalAccess = null;
 let accessToken = '';
 let supabaseClient = null;
 let authMode = 'signin';
+let authOtpPending = false;
+let authOtpEmail = '';
+let pendingSignupProfile = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSupabase();
@@ -160,7 +163,6 @@ async function acquireToken() {
 async function signIn() {
   try {
     const email = readValue('authEmail').toLowerCase();
-    const password = readValue('authPassword');
     validateAllowedDomain(email);
     const authStatus = await fetchAuthStatus(email);
     if (!authStatus.exists) {
@@ -172,22 +174,19 @@ async function signIn() {
     if (authStatus.status === 'rejected') {
       throw new Error('Your access request was rejected. Please contact an administrator.');
     }
-    setAuthStatus('info', 'Signing you in...');
-    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    setAuthStatus('info', 'Sending OTP to your email...');
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: false
+      }
+    });
     if (error) throw error;
-    if (!isEmailVerified(data.user)) {
-      await supabaseClient.auth.signOut();
-      throw new Error('Email verification is required before sign in. Check your inbox and confirm your email first.');
-    }
-    currentUser = normalizeUser(data.user);
-    accessToken = data.session?.access_token || '';
-    validateCompanyEmail(currentUser.email);
-    await resolveRole();
-    await tryLoadPartners();
-    closeModal('authModal');
-    updateAuthUi();
-    setSyncStatus('ready', `Signed in as ${currentUser.email}`);
-    showToast('Signed in successfully.', 'success');
+    authOtpPending = true;
+    authOtpEmail = email;
+    pendingSignupProfile = null;
+    switchAuthMode('signin');
+    setAuthStatus('success', 'OTP sent. Enter the 6-digit code from your inbox to complete sign in.');
   } catch (error) {
     handleError(error, 'Portal sign-in failed.');
   }
@@ -196,19 +195,11 @@ async function signIn() {
 async function signUp() {
   try {
     const email = readValue('authEmail').toLowerCase();
-    const password = readValue('authPassword');
-    const confirmPassword = readValue('authConfirmPassword');
     const fullName = readValue('authFullName');
     const requestedRole = document.getElementById('authRequestedRole')?.value || 'business_development_executive';
 
     validateAllowedDomain(email);
     validateRequestedRole(email, requestedRole);
-    if (!password || password.length < 8) {
-      throw new Error('Password must be at least 8 characters.');
-    }
-    if (password !== confirmPassword) {
-      throw new Error('Password and Confirm Password must match.');
-    }
     if (!fullName) {
       throw new Error('Full Name is required for sign up.');
     }
@@ -217,38 +208,32 @@ async function signUp() {
       throw new Error('An account request already exists for this email. Sign in instead or contact an administrator.');
     }
 
-    setAuthStatus('info', 'Creating your account request...');
-    const { data, error } = await supabaseClient.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName }
-      }
-    });
-    if (error) throw error;
-    if (!data.user) throw new Error('Sign-up did not return a user.');
-
+    setAuthStatus('info', 'Sending OTP to verify your organization email...');
     const superAdminCount = await getApprovedSuperAdminCount();
     const shouldBootstrapSuperAdmin =
       requestedRole === 'super_admin' &&
       email.endsWith(`@${CONFIG.superAdminDomain}`) &&
       superAdminCount === 0;
 
-    await upsertPortalUser({
-      user_id: data.user.id,
+    const { error } = await supabaseClient.auth.signInWithOtp({
       email,
-      full_name: fullName,
-      requested_role: requestedRole,
-      assigned_role: shouldBootstrapSuperAdmin ? 'super_admin' : 'hr_admin',
-      status: shouldBootstrapSuperAdmin ? 'approved' : 'pending',
-      shared_admin: false
+      options: {
+        shouldCreateUser: true,
+        data: { full_name: fullName }
+      }
     });
+    if (error) throw error;
 
-    if (shouldBootstrapSuperAdmin) {
-      setAuthStatus('success', 'Initial Super Admin account created. Confirm the email from your inbox before signing in.');
-    } else {
-      setAuthStatus('success', 'Account request submitted. Confirm your email from your inbox first, then wait for admin approval.');
-    }
+    authOtpPending = true;
+    authOtpEmail = email;
+    pendingSignupProfile = {
+      email,
+      fullName,
+      requestedRole,
+      shouldBootstrapSuperAdmin
+    };
+    switchAuthMode('signup');
+    setAuthStatus('success', 'OTP sent. Enter the 6-digit code from your inbox to complete sign up.');
   } catch (error) {
     handleError(error, 'Portal sign-up failed.');
   }
@@ -1237,6 +1222,55 @@ async function fetchAuthStatus(email) {
   return response.json();
 }
 
+async function verifyAuthOtp() {
+  try {
+    const email = authOtpEmail || readValue('authEmail').toLowerCase();
+    const token = readValue('authOtp');
+    if (!email || !token) {
+      throw new Error('Enter the OTP sent to your email.');
+    }
+
+    setAuthStatus('info', 'Verifying OTP...');
+    const { data, error } = await supabaseClient.auth.verifyOtp({
+      email,
+      token,
+      type: 'email'
+    });
+    if (error) throw error;
+
+    if (authMode === 'signup' && pendingSignupProfile) {
+      await upsertPortalUser({
+        user_id: data.user.id,
+        email: pendingSignupProfile.email,
+        full_name: pendingSignupProfile.fullName,
+        requested_role: pendingSignupProfile.requestedRole,
+        assigned_role: pendingSignupProfile.shouldBootstrapSuperAdmin ? 'super_admin' : 'hr_admin',
+        status: pendingSignupProfile.shouldBootstrapSuperAdmin ? 'approved' : 'pending',
+        shared_admin: false
+      });
+
+      if (!pendingSignupProfile.shouldBootstrapSuperAdmin) {
+        await supabaseClient.auth.signOut();
+        resetAuthForm(true);
+        setAuthStatus('success', 'Email verified. Your signup is now pending admin approval.');
+        return;
+      }
+    }
+
+    currentUser = normalizeUser(data.user);
+    accessToken = data.session?.access_token || '';
+    validateCompanyEmail(currentUser.email);
+    await resolveRole();
+    await tryLoadPartners();
+    closeModal('authModal');
+    updateAuthUi();
+    setSyncStatus('ready', `Signed in as ${currentUser.email}`);
+    showToast(authMode === 'signup' ? 'Email verified and account created.' : 'Signed in successfully.', 'success');
+  } catch (error) {
+    handleError(error, 'OTP verification failed.');
+  }
+}
+
 async function graphGet(path) {
   return graphRequest(path, { method: 'GET' });
 }
@@ -1499,8 +1533,8 @@ function showAuthHint() {
   setAuthStatus(
     'info',
     authMode === 'signup'
-      ? `Create your portal account with your approved company email, then confirm the verification email. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
-      : 'Sign in with your approved, verified portal email and password.'
+      ? `Create your portal account with your approved company email, then verify it with the OTP sent to that inbox. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
+      : 'Sign in by requesting an OTP to your approved portal email and verifying it from that inbox.'
   );
 }
 
@@ -1533,7 +1567,10 @@ function closeModal(id) {
 
 function resetAuthForm(resetMode = false) {
   if (resetMode) authMode = 'signin';
-  ['authEmail', 'authPassword', 'authConfirmPassword', 'authFullName'].forEach((id) => {
+  authOtpPending = false;
+  authOtpEmail = '';
+  pendingSignupProfile = null;
+  ['authEmail', 'authOtp', 'authFullName'].forEach((id) => {
     const field = document.getElementById(id);
     if (field) field.value = '';
   });
@@ -1544,13 +1581,6 @@ function resetAuthForm(resetMode = false) {
     status.className = 'config-status';
     status.innerHTML = '';
   }
-  document.querySelectorAll('.password-toggle').forEach((button) => {
-    button.textContent = 'Show';
-  });
-  ['authPassword', 'authConfirmPassword'].forEach((id) => {
-    const field = document.getElementById(id);
-    if (field) field.type = 'password';
-  });
   switchAuthMode(authMode);
 }
 
@@ -1570,18 +1600,6 @@ function updateSelectedFilesList(inputId, listId) {
   list.classList.remove('hidden');
 }
 
-function isEmailVerified(user) {
-  return Boolean(user?.email_confirmed_at || user?.confirmed_at);
-}
-
-function togglePasswordVisibility(fieldId, button) {
-  const field = document.getElementById(fieldId);
-  if (!field || !button) return;
-  const isPassword = field.type === 'password';
-  field.type = isPassword ? 'text' : 'password';
-  button.textContent = isPassword ? 'Hide' : 'Show';
-}
-
 function switchAuthMode(mode) {
   authMode = mode === 'signup' ? 'signup' : 'signin';
   document.getElementById('signInModeBtn')?.classList.toggle('active', authMode === 'signin');
@@ -1589,9 +1607,12 @@ function switchAuthMode(mode) {
   document.querySelectorAll('.auth-signup-only').forEach((field) => {
     field.classList.toggle('hidden', authMode !== 'signup');
   });
+  document.querySelectorAll('.auth-otp-only').forEach((field) => {
+    field.classList.toggle('hidden', !authOtpPending);
+  });
   const primary = document.getElementById('authPrimaryBtn');
   const switchBtn = document.getElementById('authSwitchBtn');
-  if (primary) primary.textContent = authMode === 'signup' ? 'Create Account' : 'Sign In';
+  if (primary) primary.textContent = authOtpPending ? 'Verify OTP' : 'Send OTP';
   if (switchBtn) switchBtn.textContent = authMode === 'signup' ? 'Back To Sign In' : 'Need An Account?';
   showAuthHint();
 }
@@ -1601,6 +1622,10 @@ function toggleAuthMode() {
 }
 
 async function handleAuthPrimary() {
+  if (authOtpPending) {
+    await verifyAuthOtp();
+    return;
+  }
   if (authMode === 'signup') {
     await signUp();
     return;
@@ -1682,7 +1707,6 @@ window.openViewModal = openViewModal;
 window.openEditModal = openEditModal;
 window.openDeleteModal = openDeleteModal;
 window.closeModal = closeModal;
-window.togglePasswordVisibility = togglePasswordVisibility;
 window.addOpportunityRow = addOpportunityRow;
 window.removeOpportunityRow = removeOpportunityRow;
 
