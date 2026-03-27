@@ -404,9 +404,19 @@
         <label class="form-label">Work Email</label>
         <input type="email" id="authEmail" class="form-input" placeholder="name@company.com" />
       </div>
-      <div class="form-group full-width auth-otp-only hidden" style="margin-top:12px">
-        <label class="form-label">Email OTP</label>
-        <input type="text" id="authOtp" class="form-input" inputmode="numeric" maxlength="6" placeholder="Enter the 6-digit OTP" />
+      <div class="form-group full-width" style="margin-top:12px">
+        <label class="form-label">Password</label>
+        <div class="password-wrap">
+          <input type="password" id="authPassword" class="form-input" placeholder="Enter your password" />
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authPassword', this)">Show</button>
+        </div>
+      </div>
+      <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
+        <label class="form-label">Confirm Password <span class="form-hint">(for signup)</span></label>
+        <div class="password-wrap">
+          <input type="password" id="authConfirmPassword" class="form-input" placeholder="Re-enter your password" />
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authConfirmPassword', this)">Show</button>
+        </div>
       </div>
       <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
         <label class="form-label">Full Name <span class="form-hint">(for signup)</span></label>
@@ -429,7 +439,7 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('authModal')">Cancel</button>
       <button class="btn btn-outline" id="authSwitchBtn" onclick="toggleAuthMode()">Need An Account?</button>
-      <button class="btn btn-primary" id="authPrimaryBtn" onclick="handleAuthPrimary()">Send OTP</button>
+      <button class="btn btn-primary" id="authPrimaryBtn" onclick="handleAuthPrimary()">Sign In</button>
     </div>
   </div>
 </div>
