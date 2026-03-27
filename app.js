@@ -8,6 +8,7 @@ const CONFIG = {
   superAdminDomain: 'gensigma.com',
   supabaseUrl: 'https://rfkjolbmkfnsgdgxbhxq.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJma2pvbGJta2Zuc2dkZ3hiaHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTA1MDgsImV4cCI6MjA4OTk2NjUwOH0.lqObEPXshQehkfKJgpAn7c-VOXcM6fNkkY904JCULdo',
+  authStatusApiUrl: '/api/auth-status',
   userAdminApiUrl: '/api/admin-users',
   siteId: 'YOUR_SHAREPOINT_SITE_ID',
   driveId: 'YOUR_DOCUMENT_LIBRARY_DRIVE_ID',
@@ -161,6 +162,16 @@ async function signIn() {
     const email = readValue('authEmail').toLowerCase();
     const password = readValue('authPassword');
     validateAllowedDomain(email);
+    const authStatus = await fetchAuthStatus(email);
+    if (!authStatus.exists) {
+      throw new Error('No portal account exists for this email. Use Sign Up first.');
+    }
+    if (authStatus.status === 'pending') {
+      throw new Error('Your access request is pending. Please wait for admin approval.');
+    }
+    if (authStatus.status === 'rejected') {
+      throw new Error('Your access request was rejected. Please contact an administrator.');
+    }
     setAuthStatus('info', 'Signing you in...');
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -196,6 +207,10 @@ async function signUp() {
     }
     if (!fullName) {
       throw new Error('Full Name is required for sign up.');
+    }
+    const existingStatus = await fetchAuthStatus(email);
+    if (existingStatus.exists) {
+      throw new Error('An account request already exists for this email. Sign in instead or contact an administrator.');
     }
 
     setAuthStatus('info', 'Creating your account request...');
@@ -1200,6 +1215,22 @@ async function updatePortalUserAccess(userId, email, status) {
   } catch (error) {
     showToast(`Access update failed. ${extractErrorMessage(error)}`, 'error');
   }
+}
+
+async function fetchAuthStatus(email) {
+  const response = await fetch(CONFIG.authStatusApiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email })
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text() || 'Could not verify account status.');
+  }
+
+  return response.json();
 }
 
 async function graphGet(path) {
