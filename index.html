@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenSigma - Partner Management Portal</title>
+  <link rel="icon" href="assets/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">
+      <img src="assets/favicon.ico" alt="Logo" width="52" height="52" style="object-fit:contain;border-radius:10px;" />
+    </div>
+    <span class="logo-text">GenSigma PartnerHub</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">OVERVIEW</div>
+    <a href="#" class="nav-item active" data-page="dashboard">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a href="#" class="nav-item" data-page="analytics">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Analytics
+    </a>
+
+    <div class="nav-section-label">PARTNERS</div>
+    <a href="#" class="nav-item" data-page="database">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+      Partner Database
+      <span class="nav-badge" id="nav-partner-count">0</span>
+    </a>
+    <a href="#" class="nav-item" data-page="add">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Add Partner
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-credit">Designed by <span>Pavan Kumar</span></div>
+  </div>
+</aside>
+
+<div class="main-wrapper">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="sidebar-toggle" id="sidebarToggle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="page-breadcrumb" id="pageBreadcrumb">Dashboard</div>
+    </div>
+    <div class="topbar-right">
+      <div class="sync-status" id="syncStatus">
+        <span class="sync-dot"></span>
+        <span id="syncText">Sign in required</span>
+      </div>
+      <button class="btn btn-outline btn-sm hidden" id="adminBtn" onclick="openAdminModal()">Manage Access</button>
+      <button class="btn btn-outline btn-sm" id="authBtn">Sign In</button>
+      <button class="btn btn-primary btn-sm" onclick="navigate('add')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Partner
+      </button>
+    </div>
+  </header>
+
+  <main class="content-area">
+    <section class="page" id="page-dashboard">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Dashboard</h1>
+          <p class="page-subtitle">Overview of your partner ecosystem</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV
+        </button>
+      </div>
+
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card stat-total">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <div class="stat-content">
+            <div class="stat-number" id="stat-total">0</div>
+            <div class="stat-label">Total Partners</div>
+          </div>
+          <div class="stat-trend up">↑ All time</div>
+        </div>
+        <div class="stat-card stat-pipeline">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="stat-content">
+            <div class="stat-number" id="stat-pipeline">0</div>
+            <div class="stat-label">Active Pipeline</div>
+          </div>
+          <div class="stat-trend up">↑ In Progress</div>
+        </div>
+        <div class="stat-card stat-dc">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 12 18 15 15"/><line x1="12" y1="11" x2="12" y2="18"/></svg></div>
+          <div class="stat-content">
+            <div class="stat-number" id="stat-dc">0</div>
+            <div class="stat-label">DC Received</div>
+          </div>
+          <div class="stat-trend neutral">→ With Writers</div>
+        </div>
+        <div class="stat-card stat-won">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg></div>
+          <div class="stat-content">
+            <div class="stat-number" id="stat-won">0</div>
+            <div class="stat-label">Contract Won</div>
+          </div>
+          <div class="stat-trend up">↑ Closed Won</div>
+        </div>
+        <div class="stat-card stat-lost">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+          <div class="stat-content">
+            <div class="stat-number" id="stat-lost">0</div>
+            <div class="stat-label">Contract Lost</div>
+          </div>
+          <div class="stat-trend down">↓ Closed Lost</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h3>Recent Partners</h3>
+            <a href="#" class="view-all-link" onclick="navigate('database')">View all →</a>
+          </div>
+          <div id="recentPartners" class="recent-list"></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h3>Top Technologies</h3>
+          </div>
+          <div id="topTechnologies" class="tech-bars"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-analytics">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Employee Analytics</h1>
+          <p class="page-subtitle">Partner sourcing performance by team member</p>
+        </div>
+      </div>
+      <div class="analytics-layout">
+        <div class="dash-card full-width">
+          <div class="dash-card-header"><h3>Partners Sourced by Employee</h3></div>
+          <div id="employeeAnalytics" class="employee-analytics-grid"></div>
+        </div>
+        <div class="dash-card full-width">
+          <div class="dash-card-header"><h3>Status Breakdown</h3></div>
+          <div id="statusBreakdown" class="status-breakdown-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-database">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Partner Database</h1>
+          <p class="page-subtitle">Manage and search all partner records</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportCSV()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="navigate('add')">+ Add Partner</button>
+        </div>
+      </div>
+
+      <div class="search-filter-bar">
+        <div class="search-wrap">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search company, employee, technology, opportunity, event ID..." oninput="filterPartners()" />
+        </div>
+        <select id="statusFilter" class="filter-select" onchange="filterPartners()">
+          <option value="">All Statuses</option>
+          <optgroup label="Onboarding">
+            <option value="Call Completed">Call Completed</option>
+            <option value="NDA Sent">NDA Sent</option>
+            <option value="NDA Signed">NDA Signed</option>
+            <option value="DC Sent">DC Sent</option>
+            <option value="DC Received">DC Received</option>
+            <option value="DC Delayed">DC Delayed</option>
+          </optgroup>
+          <optgroup label="Submission">
+            <option value="Submitted to RFP Team">Submitted to RFP Team</option>
+            <option value="Proposal Submitted">Proposal Submitted</option>
+          </optgroup>
+          <optgroup label="Outcome">
+            <option value="Contract Won">Contract Won</option>
+            <option value="Contract Lost">Contract Lost</option>
+            <option value="Future Pipeline">Future Pipeline</option>
+          </optgroup>
+        </select>
+        <select id="employeeFilter" class="filter-select" onchange="filterPartners()">
+          <option value="">All Employees</option>
+        </select>
+      </div>
+
+      <div class="table-container">
+        <table class="data-table" id="partnersTable">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Employee</th>
+              <th>Technologies</th>
+              <th>Status</th>
+              <th>Opportunity Submitted</th>
+              <th>Sourcing Event ID</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="partnersTableBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty-state hidden">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <p>No partners found</p>
+          <span>Try adjusting your search or filters</span>
+        </div>
+      </div>
+      <div class="table-footer">
+        <span id="tableCount">0 partners</span>
+      </div>
+    </section>
+
+    <section class="page hidden" id="page-add">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Add New Partner</h1>
+          <p class="page-subtitle">Fill in the details to register a new partner</p>
+        </div>
+      </div>
+      <div class="form-layout">
+        <div class="form-card">
+          <div class="form-section-title">
+            <div class="form-section-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            Partner Information
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Employee Name <span class="required">*</span></label>
+              <input type="text" id="f-employee" class="form-input" placeholder="e.g. Pavan" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Company Name <span class="required">*</span></label>
+              <input type="text" id="f-company" class="form-input" placeholder="e.g. Cisco Systems" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Contact Person</label>
+              <input type="text" id="f-contact" class="form-input" placeholder="e.g. John Smith" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address</label>
+              <input type="email" id="f-email" class="form-input" placeholder="contact@company.com" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Company Website</label>
+              <input type="url" id="f-website" class="form-input" placeholder="https://www.company.com" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Technologies <span class="form-hint">(comma separated)</span></label>
+              <input type="text" id="f-technologies" class="form-input" placeholder="e.g. Cloud, Security, AI/ML" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Partner Status <span class="required">*</span></label>
+              <select id="f-status" class="form-input form-select">
+                <option value="">Select status...</option>
+                <optgroup label="Onboarding">
+                  <option value="Call Completed">Call Completed</option>
+                  <option value="NDA Sent">NDA Sent</option>
+                  <option value="NDA Signed">NDA Signed</option>
+                  <option value="DC Sent">DC Sent</option>
+                  <option value="DC Received">DC Received</option>
+                  <option value="DC Delayed">DC Delayed</option>
+                </optgroup>
+                <optgroup label="Submission">
+                  <option value="Submitted to RFP Team">Submitted to RFP Team</option>
+                  <option value="Proposal Submitted">Proposal Submitted</option>
+                </optgroup>
+                <optgroup label="Outcome">
+                  <option value="Contract Won">Contract Won</option>
+                  <option value="Contract Lost">Contract Lost</option>
+                  <option value="Future Pipeline">Future Pipeline</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-card">
+          <div class="form-section-title">
+            <div class="form-section-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            Capability Statement
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Company Overview</label>
+            <textarea id="f-overview" class="form-textarea" rows="3" placeholder="Brief description of the company and its mission..."></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Core Competencies <span class="form-hint">(comma separated)</span></label>
+            <input type="text" id="f-competencies" class="form-input" placeholder="e.g. Network Infrastructure, Cybersecurity, Cloud Solutions" />
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Relevant Services <span class="form-hint">(comma separated)</span></label>
+            <input type="text" id="f-services" class="form-input" placeholder="e.g. Managed Services, Professional Services, Training" />
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Industries Served</label>
+            <input type="text" id="f-industries" class="form-input" placeholder="e.g. Finance, Healthcare, Government" />
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Differentiators</label>
+            <textarea id="f-differentiators" class="form-textarea" rows="2" placeholder="What makes this partner stand out..."></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Past Performance</label>
+            <textarea id="f-pastPerformance" class="form-textarea" rows="2" placeholder="Notable achievements and case studies..."></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label class="form-label">Certifications / Compliance</label>
+            <input type="text" id="f-certifications" class="form-input" placeholder="e.g. ISO 27001, SOC 2, FedRAMP" />
+          </div>
+        </div>
+
+        <div class="form-card">
+          <div class="form-section-title">
+            <div class="form-section-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            Opportunity Details
+          </div>
+
+          <div class="opp-list-header">
+            <span class="form-label" style="margin:0">Opportunities Submitted / Reached Out To</span>
+            <button type="button" class="btn-add-opp" onclick="addOpportunityRow('f-opp-list')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Opportunity
+            </button>
+          </div>
+          <div id="f-opp-list" class="opp-list"></div>
+
+          <div class="form-group full-width" style="margin-top:18px">
+            <label class="form-label">BD Owner Notes / Comments</label>
+            <textarea id="f-bdNotes" class="form-textarea" rows="3" placeholder="Notes from the BD owner, context, relationship history, next steps..."></textarea>
+          </div>
+
+          <div class="form-group full-width" style="margin-top:4px">
+            <label class="form-label">Upload Partner Files</label>
+            <input type="file" id="f-files" class="form-input" multiple accept=".pdf,.doc,.docx,.ppt,.pptx" />
+            <div class="file-selection-list hidden" id="f-files-list"></div>
+            <span class="form-hint">Upload one or more files associated with this partner. Files go to the partner SharePoint folder after the record is saved.</span>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Capability PPT Refresh</label>
+            <div class="form-input" style="display:flex;align-items:center;min-height:42px;color:var(--text-muted)">
+              Save the partner to trigger capability PPT refresh if the Power Automate or Office Script endpoint is configured.
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-ghost" onclick="navigate('database')">Cancel</button>
+          <button class="btn btn-primary" onclick="addPartner()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Partner
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-overlay hidden" id="authModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h3 class="modal-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Portal Access
+      </h3>
+      <button class="modal-close" onclick="closeModal('authModal')">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <p class="config-desc">Sign in with your portal account. New users can request access with their role, and admins can approve or reject access inside the system.</p>
+      <div class="auth-mode-toggle">
+        <button type="button" class="auth-mode-btn active" id="signInModeBtn" onclick="switchAuthMode('signin')">Sign In</button>
+        <button type="button" class="auth-mode-btn" id="signUpModeBtn" onclick="switchAuthMode('signup')">Sign Up</button>
+      </div>
+      <div class="form-group full-width">
+        <label class="form-label">Work Email</label>
+        <input type="email" id="authEmail" class="form-input" placeholder="name@company.com" />
+      </div>
+      <div class="form-group full-width" style="margin-top:12px">
+        <label class="form-label">Password</label>
+        <div class="password-wrap">
+          <input type="password" id="authPassword" class="form-input" placeholder="Enter password" />
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authPassword', this)" aria-label="Show password">Show</button>
+        </div>
+      </div>
+      <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
+          <label class="form-label">Confirm Password <span class="form-hint">(for signup)</span></label>
+          <div class="password-wrap">
+            <input type="password" id="authConfirmPassword" class="form-input" placeholder="Confirm password" />
+            <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authConfirmPassword', this)" aria-label="Show confirm password">Show</button>
+          </div>
+      </div>
+      <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
+        <label class="form-label">Full Name <span class="form-hint">(for signup)</span></label>
+        <input type="text" id="authFullName" class="form-input" placeholder="Your name" />
+      </div>
+      <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
+        <label class="form-label">Requested Role <span class="form-hint">(for signup)</span></label>
+        <select id="authRequestedRole" class="form-input form-select">
+          <option value="business_development_executive">Business Development Executive</option>
+          <option value="account_executive">Account Executive</option>
+          <option value="bid_management">Bid Management</option>
+          <option value="proposal_writer">Proposal Writer</option>
+          <option value="hr_admin">HR Admin</option>
+          <option value="shared_admin">Shared Admin</option>
+          <option value="super_admin">Super Admin</option>
+        </select>
+      </div>
+      <div class="config-status" id="authStatus" style="min-height:44px;line-height:1.6"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('authModal')">Cancel</button>
+      <button class="btn btn-outline" id="authSwitchBtn" onclick="toggleAuthMode()">Need An Account?</button>
+      <button class="btn btn-primary" id="authPrimaryBtn" onclick="handleAuthPrimary()">Sign In</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="adminModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Access Management</h3>
+      <button class="modal-close" onclick="closeModal('adminModal')">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <p class="config-desc">Approve users, assign their final role, and grant shared admin access where needed.</p>
+      <div class="config-status" id="adminStatus" style="min-height:44px;line-height:1.6"></div>
+      <div id="adminUsersList" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('adminModal')">Close</button>
+      <button class="btn btn-primary" onclick="loadAdminUsers()">Refresh</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="viewModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title" id="viewModalTitle">Partner Details</h3>
+      <button class="modal-close" onclick="closeModal('viewModal')">&#10005;</button>
+    </div>
+    <div class="modal-body" id="viewModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('viewModal')">Close</button>
+      <button class="btn btn-outline" id="viewEditBtn">Edit Partner</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="editModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Edit Partner</h3>
+      <button class="modal-close" onclick="closeModal('editModal')">&#10005;</button>
+    </div>
+    <div class="modal-body" id="editModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn btn-primary" id="saveEditBtn">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="deleteModal">
+  <div class="modal modal-sm">
+    <div class="modal-header modal-header-danger">
+      <h3 class="modal-title">Confirm Deletion</h3>
+      <button class="modal-close" onclick="closeModal('deleteModal')">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="delete-confirm-body">
+        <div class="delete-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </div>
+        <div>
+          <p class="delete-confirm-title">Delete <strong id="deletePartnerName"></strong>?</p>
+          <p class="delete-confirm-sub">This action cannot be undone. The partner record will be permanently removed from the shared database.</p>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('deleteModal')">Cancel</button>
+      <button class="btn btn-danger" id="confirmDeleteBtn">Delete Partner</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast">
+  <div class="toast-icon" id="toastIcon"></div>
+  <span id="toastMessage"></span>
+</div>
+
+<div class="loading-overlay hidden" id="loadingOverlay">
+  <div class="loading-spinner">
+    <div class="spinner"></div>
+    <span id="loadingText">Working...</span>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
