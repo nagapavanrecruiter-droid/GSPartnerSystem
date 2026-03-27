@@ -175,6 +175,10 @@ async function signIn() {
     setAuthStatus('info', 'Signing you in...');
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (!isEmailVerified(data.user)) {
+      await supabaseClient.auth.signOut();
+      throw new Error('Email verification is required before sign in. Check your inbox and confirm your email first.');
+    }
     currentUser = normalizeUser(data.user);
     accessToken = data.session?.access_token || '';
     validateCompanyEmail(currentUser.email);
@@ -241,9 +245,9 @@ async function signUp() {
     });
 
     if (shouldBootstrapSuperAdmin) {
-      setAuthStatus('success', 'Initial Super Admin account created. You can now sign in.');
+      setAuthStatus('success', 'Initial Super Admin account created. Confirm the email from your inbox before signing in.');
     } else {
-      setAuthStatus('success', 'Account request submitted. An admin must approve your access before you can use the system.');
+      setAuthStatus('success', 'Account request submitted. Confirm your email from your inbox first, then wait for admin approval.');
     }
   } catch (error) {
     handleError(error, 'Portal sign-up failed.');
@@ -1495,8 +1499,8 @@ function showAuthHint() {
   setAuthStatus(
     'info',
     authMode === 'signup'
-      ? `Create your portal account with your approved company email. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
-      : 'Sign in with your approved portal account email and password.'
+      ? `Create your portal account with your approved company email, then confirm the verification email. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
+      : 'Sign in with your approved, verified portal email and password.'
   );
 }
 
@@ -1564,6 +1568,10 @@ function updateSelectedFilesList(inputId, listId) {
 
   list.innerHTML = files.map((file) => `<span class="file-selection-chip">${esc(file.name)}</span>`).join('');
   list.classList.remove('hidden');
+}
+
+function isEmailVerified(user) {
+  return Boolean(user?.email_confirmed_at || user?.confirmed_at);
 }
 
 function togglePasswordVisibility(fieldId, button) {
