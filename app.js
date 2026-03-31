@@ -9,6 +9,7 @@ const CONFIG = {
   supabaseUrl: 'https://rfkjolbmkfnsgdgxbhxq.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJma2pvbGJta2Zuc2dkZ3hiaHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTA1MDgsImV4cCI6MjA4OTk2NjUwOH0.lqObEPXshQehkfKJgpAn7c-VOXcM6fNkkY904JCULdo',
   authStatusApiUrl: '/api/auth-status',
+  signupRequestApiUrl: '/api/signup-request',
   userAdminApiUrl: '/api/admin-users',
   partnerFilesBucket: 'partner-files',
   readerGroups: ['PartnerPortal_Readers'],
@@ -266,7 +267,7 @@ async function signUp() {
       throw new Error('Signup request was created, but the user ID was not returned.');
     }
 
-    await upsertPortalUser({
+    await createSignupRequest({
       user_id: data.user.id,
       email,
       full_name: fullName,
@@ -1352,6 +1353,23 @@ async function fetchAuthStatus(email) {
 
   return response.json();
 }
+
+async function createSignupRequest(profile) {
+  const response = await fetch(CONFIG.signupRequestApiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(profile)
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text() || 'Could not create signup request.');
+  }
+
+  return response.json();
+}
+
 function clearAddForm() {
   [
     'f-employee',
