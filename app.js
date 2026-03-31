@@ -701,16 +701,32 @@ function buildViewModalHtml(partner, files) {
   const fileHtml = files.length
     ? files.map((file) => `<a class="file-link" href="${file.webUrl}" target="_blank" rel="noopener">${esc(file.name)}</a>`).join('')
     : '<span class="empty-text">No files uploaded yet</span>';
+  const companyInitials = (partner.company || 'P')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
+  const safeWebsite = partner.website ? esc(partner.website) : '';
+  const safeCompany = esc(partner.company || 'Partner');
+  const safeStatus = esc(partner.status || '—');
 
   return `
+    <div class="detail-header">
+      <div class="detail-avatar">${esc(companyInitials)}</div>
+      <div>
+        <div class="detail-company-name">${partner.website ? `<a class="detail-company-link" href="${safeWebsite}" target="_blank" rel="noopener">${safeCompany}</a>` : safeCompany}</div>
+        <div class="detail-meta">${esc(partner.employee || 'Unknown owner')} • ${safeStatus}</div>
+      </div>
+    </div>
     <div class="detail-grid">
       <div class="detail-item"><span class="detail-label">Employee</span><span class="detail-value">${esc(partner.employee)}</span></div>
-      <div class="detail-item"><span class="detail-label">Company</span><span class="detail-value">${partner.website ? `<a href="${esc(partner.website)}" target="_blank" rel="noopener">${esc(partner.company)}</a>` : esc(partner.company)}</span></div>
+      <div class="detail-item"><span class="detail-label">Company</span><span class="detail-value">${partner.website ? `<a class="detail-company-link" href="${safeWebsite}" target="_blank" rel="noopener">${safeCompany}</a>` : safeCompany}</span></div>
       <div class="detail-item"><span class="detail-label">Contact</span><span class="detail-value">${esc(partner.contact || '—')}</span></div>
       <div class="detail-item"><span class="detail-label">Email</span><span class="detail-value">${esc(partner.email || '—')}</span></div>
-      <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value">${esc(partner.status || '—')}</span></div>
+      <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value"><span class="status-pill">${safeStatus}</span></span></div>
       <div class="detail-item"><span class="detail-label">Sourcing Event ID</span><span class="detail-value">${esc(partner.eventId || '—')}</span></div>
-      <div class="detail-item full-width"><span class="detail-label">Technologies</span><div class="tags-wrap">${techTags || '<span class="empty-text">None</span>'}</div></div>
+      <div class="detail-item full-width"><span class="detail-label">Technologies</span><div class="tech-tag-group">${techTags || '<span class="empty-text">None</span>'}</div></div>
       <div class="detail-item full-width"><span class="detail-label">Opportunities</span><div class="tags-wrap">${oppTags}</div></div>
       <div class="detail-item full-width"><span class="detail-label">BD Notes</span><div class="detail-value">${esc(partner.notes || 'No notes added')}</div></div>
       <div class="detail-item full-width"><span class="detail-label">Overview</span><div class="detail-value">${esc(partner.capabilityStatement.overview || 'No overview')}</div></div>
@@ -968,12 +984,21 @@ function renderTable(rows) {
 
   emptyState.classList.add('hidden');
   rows.forEach((partner) => {
+    const companyInitials = (partner.company || 'P')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('');
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
         <div class="company-cell">
-          <strong>${partner.website ? `<a href="${esc(partner.website)}" target="_blank" rel="noopener">${esc(partner.company)}</a>` : esc(partner.company)}</strong>
-          <span>${esc(partner.contact || '')}</span>
+          <div class="company-avatar">${esc(companyInitials)}</div>
+          <div class="company-stack">
+            <div class="company-name">${partner.website ? `<a class="company-link" href="${esc(partner.website)}" target="_blank" rel="noopener">${esc(partner.company)}</a>` : esc(partner.company)}</div>
+            <div class="company-email">${esc(partner.contact || 'No contact added')}</div>
+          </div>
         </div>
       </td>
       <td>${esc(partner.employee)}</td>
@@ -1615,7 +1640,12 @@ function normalizeWebsite(value) {
 
 function sanitizeFileName(value) {
   return String(value || 'file')
+    .normalize('NFKD')
+    .replace(/[^\x00-\x7F]/g, '-')
     .replace(/[\\/:*?"<>|#%&{}~]/g, '-')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
     .replace(/\s+/g, '-')
     .trim()
     .slice(0, 100) || 'file';
