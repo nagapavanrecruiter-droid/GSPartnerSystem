@@ -695,6 +695,8 @@ function openViewModal(id) {
 
 function buildViewModalHtml(partner, files) {
   const techTags = partner.technologies.map((tech) => `<span class="tech-tag">${esc(tech)}</span>`).join('');
+  const competencyTags = (partner.capabilityStatement.coreCompetencies || []).map((item) => `<span class="tech-tag">${esc(item)}</span>`).join('');
+  const serviceTags = (partner.capabilityStatement.services || []).map((item) => `<span class="service-tag">${esc(item)}</span>`).join('');
   const oppTags = partner.opportunities.length
     ? partner.opportunities.map((opp) => `<span class="tag">${esc(opp)}</span>`).join('')
     : '<span class="empty-text">No opportunities added</span>';
@@ -710,43 +712,95 @@ function buildViewModalHtml(partner, files) {
   const safeWebsite = partner.website ? esc(partner.website) : '';
   const safeCompany = esc(partner.company || 'Partner');
   const safeStatus = esc(partner.status || '—');
+  const statusClass = statusClassName(partner.status);
+  const addedOn = formatDisplayDate(partner.createdAt);
 
   return `
     <div class="detail-header">
       <div class="detail-avatar">${esc(companyInitials)}</div>
-      <div>
+      <div class="detail-heading">
         <div class="detail-company-name">${partner.website ? `<a class="detail-company-link" href="${safeWebsite}" target="_blank" rel="noopener">${safeCompany}</a>` : safeCompany}</div>
-        <div class="detail-meta">${esc(partner.employee || 'Unknown owner')} • ${safeStatus}</div>
-      </div>
-    </div>
-    <div class="detail-grid">
-      <div class="detail-item"><span class="detail-label">Employee</span><span class="detail-value">${esc(partner.employee)}</span></div>
-      <div class="detail-item"><span class="detail-label">Company</span><span class="detail-value">${partner.website ? `<a class="detail-company-link" href="${safeWebsite}" target="_blank" rel="noopener">${safeCompany}</a>` : safeCompany}</span></div>
-      <div class="detail-item"><span class="detail-label">Contact</span><span class="detail-value">${esc(partner.contact || '—')}</span></div>
-      <div class="detail-item"><span class="detail-label">Email</span><span class="detail-value">${esc(partner.email || '—')}</span></div>
-      <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value"><span class="status-pill">${safeStatus}</span></span></div>
-      <div class="detail-item"><span class="detail-label">Sourcing Event ID</span><span class="detail-value">${esc(partner.eventId || '—')}</span></div>
-      <div class="detail-item full-width"><span class="detail-label">Technologies</span><div class="tech-tag-group">${techTags || '<span class="empty-text">None</span>'}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Opportunities</span><div class="tags-wrap">${oppTags}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">BD Notes</span><div class="detail-value">${esc(partner.notes || 'No notes added')}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Overview</span><div class="detail-value">${esc(partner.capabilityStatement.overview || 'No overview')}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Core Competencies</span><div class="tags-wrap">${renderArrayTags(partner.capabilityStatement.coreCompetencies)}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Services</span><div class="tags-wrap">${renderArrayTags(partner.capabilityStatement.services)}</div></div>
-      <div class="detail-item"><span class="detail-label">Industries</span><span class="detail-value">${esc(partner.capabilityStatement.industries || '—')}</span></div>
-      <div class="detail-item"><span class="detail-label">Certifications</span><span class="detail-value">${esc(partner.capabilityStatement.certifications || '—')}</span></div>
-      <div class="detail-item full-width"><span class="detail-label">Differentiators</span><div class="detail-value">${esc(partner.capabilityStatement.differentiators || '—')}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Past Performance</span><div class="detail-value">${esc(partner.capabilityStatement.pastPerformance || '—')}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">Partner Files</span><div class="file-link-list">${fileHtml}</div></div>
-      <div class="detail-item full-width">
-        <span class="detail-label">Internal AI Capability View</span>
-        <div class="detail-value">
-          <div class="table-actions" style="margin-bottom:12px">
-            <button class="icon-btn" onclick="loadPartnerInsights('${escAttr(partner.recordId)}', 'summary')">Generate PPT Summary</button>
-            <button class="icon-btn" onclick="loadPartnerInsights('${escAttr(partner.recordId)}', 'score')">Score Opportunity Fit</button>
-          </div>
-          <div id="insightsPanel" class="detail-value">Generate a controlled internal summary or score from the partner data mirror.</div>
+        <div class="detail-meta-row">
+          <span>${esc(partner.contact || 'No contact')}</span>
+          <span class="detail-meta-sep">•</span>
+          <span>${esc(partner.email || 'No email')}</span>
+          <span class="status-pill ${statusClass}">${safeStatus}</span>
         </div>
       </div>
+    </div>
+    <div class="modal-section-title">Partner Details</div>
+    <div class="detail-summary-grid">
+      <div class="summary-field">
+        <div class="summary-label">Sourced By</div>
+        <div class="summary-value">${esc(partner.employee || '—')}</div>
+      </div>
+      <div class="summary-field">
+        <div class="summary-label">Status</div>
+        <div class="summary-value"><span class="status-pill ${statusClass}">${safeStatus}</span></div>
+      </div>
+      <div class="summary-field">
+        <div class="summary-label">Contact Email</div>
+        <div class="summary-value">${partner.email ? `<a class="detail-company-link" href="mailto:${esc(partner.email)}">${esc(partner.email)}</a>` : '—'}</div>
+      </div>
+      <div class="summary-field">
+        <div class="summary-label">Website</div>
+        <div class="summary-value">${partner.website ? `<a class="detail-company-link" href="${safeWebsite}" target="_blank" rel="noopener">${safeWebsite}</a>` : '—'}</div>
+      </div>
+      <div class="summary-field">
+        <div class="summary-label">Added On</div>
+        <div class="summary-value">${esc(addedOn)}</div>
+      </div>
+      <div class="summary-field">
+        <div class="summary-label">Sourcing Event ID</div>
+        <div class="summary-value">${esc(partner.eventId || '—')}</div>
+      </div>
+    </div>
+
+    <div class="modal-section-title">Technologies</div>
+    <div class="detail-chip-row">${techTags || '<span class="empty-text">None</span>'}</div>
+
+    <div class="modal-section-title">Opportunity Details</div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Opportunities Submitted / Reached Out To</div>
+      <div class="tags-wrap">${oppTags}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">BD Owner Notes / Comments</div>
+      <div class="detail-paragraph">${esc(partner.notes || 'No notes added')}</div>
+    </div>
+
+    <div class="modal-section-title">Capability Statement</div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Company Overview</div>
+      <div class="detail-paragraph">${esc(partner.capabilityStatement.overview || 'No overview')}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Core Competencies</div>
+      <div class="detail-chip-row">${competencyTags || '<span class="empty-text">None</span>'}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Services</div>
+      <div class="detail-chip-row">${serviceTags || '<span class="empty-text">None</span>'}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Industries Served</div>
+      <div class="detail-paragraph">${esc(partner.capabilityStatement.industries || '—')}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Differentiators</div>
+      <div class="detail-paragraph">${esc(partner.capabilityStatement.differentiators || '—')}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Past Performance</div>
+      <div class="detail-paragraph">${esc(partner.capabilityStatement.pastPerformance || '—')}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Certifications</div>
+      <div class="detail-paragraph">${esc(partner.capabilityStatement.certifications || '—')}</div>
+    </div>
+    <div class="detail-stack-block">
+      <div class="summary-label">Partner Files</div>
+      <div class="file-link-list">${fileHtml}</div>
     </div>
   `;
 }
@@ -760,59 +814,68 @@ function openEditModal(id) {
   const partner = partners.find((entry) => entry.recordId === id);
   if (!partner) return;
   currentEditId = id;
+  const opportunityPairs = buildOpportunityPairs(partner);
 
   document.getElementById('editModalBody').innerHTML = `
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Employee Name <span class="required">*</span></label>
-        <input type="text" id="e-employee" class="form-input" value="${escAttr(partner.employee)}" />
+    <div class="edit-modal-layout">
+      <div class="modal-section-title">Partner Information</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Employee Name <span class="required">*</span></label>
+          <input type="text" id="e-employee" class="form-input" value="${escAttr(partner.employee)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company Name <span class="required">*</span></label>
+          <input type="text" id="e-company" class="form-input" value="${escAttr(partner.company)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contact Person</label>
+          <input type="text" id="e-contact" class="form-input" value="${escAttr(partner.contact)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="e-email" class="form-input" value="${escAttr(partner.email)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company Website</label>
+          <input type="url" id="e-website" class="form-input" value="${escAttr(partner.website)}" placeholder="https://www.company.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Technologies <span class="form-hint">(comma separated)</span></label>
+          <input type="text" id="e-technologies" class="form-input" value="${escAttr(partner.technologies.join(', '))}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Partner Status <span class="required">*</span></label>
+          <select id="e-status" class="form-input form-select">${buildStatusOptions(partner.status)}</select>
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Company Name <span class="required">*</span></label>
-        <input type="text" id="e-company" class="form-input" value="${escAttr(partner.company)}" />
+
+      <div class="modal-section-title">Opportunity Details</div>
+      <div class="opp-list-header">
+        <span class="form-label" style="margin:0">Opportunities Submitted / Reached Out To</span>
+        <button type="button" class="btn-add-opp" onclick="addOpportunityRow('e-opp-list')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Opportunity
+        </button>
       </div>
-      <div class="form-group">
-        <label class="form-label">Contact Person</label>
-        <input type="text" id="e-contact" class="form-input" value="${escAttr(partner.contact)}" />
+      <div id="e-opp-list" class="opp-list"></div>
+
+      <div class="form-group full-width edit-spacer">
+        <label class="form-label">BD Owner Notes / Comments</label>
+        <textarea id="e-notes" class="form-textarea" rows="3" placeholder="Notes from the BD owner...">${esc(partner.notes)}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Email Address</label>
-        <input type="email" id="e-email" class="form-input" value="${escAttr(partner.email)}" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Company Website</label>
-        <input type="url" id="e-website" class="form-input" value="${escAttr(partner.website)}" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Technologies</label>
-        <input type="text" id="e-technologies" class="form-input" value="${escAttr(partner.technologies.join(', '))}" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Partner Status <span class="required">*</span></label>
-        <select id="e-status" class="form-input form-select">${buildStatusOptions(partner.status)}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Sourcing Event ID</label>
-        <input type="text" id="e-eventId" class="form-input" value="${escAttr(partner.eventId)}" />
-      </div>
-      <div class="form-group full-width">
-        <label class="form-label">Opportunity Submitted</label>
-        <input type="text" id="e-opportunities" class="form-input" value="${escAttr(partner.opportunities.join(', '))}" />
-      </div>
-      <div class="form-group full-width">
-        <label class="form-label">BD Notes / Comments</label>
-        <textarea id="e-notes" class="form-textarea" rows="3">${esc(partner.notes)}</textarea>
-      </div>
+
+      <div class="modal-section-title">Capability Statement</div>
       <div class="form-group full-width">
         <label class="form-label">Company Overview</label>
-        <textarea id="e-overview" class="form-textarea" rows="3">${esc(partner.capabilityStatement.overview || '')}</textarea>
+        <textarea id="e-overview" class="form-textarea" rows="4">${esc(partner.capabilityStatement.overview || '')}</textarea>
       </div>
       <div class="form-group full-width">
-        <label class="form-label">Core Competencies</label>
+        <label class="form-label">Core Competencies <span class="form-hint">(comma separated)</span></label>
         <input type="text" id="e-competencies" class="form-input" value="${escAttr((partner.capabilityStatement.coreCompetencies || []).join(', '))}" />
       </div>
       <div class="form-group full-width">
-        <label class="form-label">Relevant Services</label>
+        <label class="form-label">Services <span class="form-hint">(comma separated)</span></label>
         <input type="text" id="e-services" class="form-input" value="${escAttr((partner.capabilityStatement.services || []).join(', '))}" />
       </div>
       <div class="form-group full-width">
@@ -821,11 +884,11 @@ function openEditModal(id) {
       </div>
       <div class="form-group full-width">
         <label class="form-label">Differentiators</label>
-        <textarea id="e-differentiators" class="form-textarea" rows="2">${esc(partner.capabilityStatement.differentiators || '')}</textarea>
+        <textarea id="e-differentiators" class="form-textarea" rows="3">${esc(partner.capabilityStatement.differentiators || '')}</textarea>
       </div>
       <div class="form-group full-width">
         <label class="form-label">Past Performance</label>
-        <textarea id="e-pastPerformance" class="form-textarea" rows="2">${esc(partner.capabilityStatement.pastPerformance || '')}</textarea>
+        <textarea id="e-pastPerformance" class="form-textarea" rows="3">${esc(partner.capabilityStatement.pastPerformance || '')}</textarea>
       </div>
       <div class="form-group full-width">
         <label class="form-label">Certifications / Compliance</label>
@@ -840,6 +903,12 @@ function openEditModal(id) {
   `;
 
   document.getElementById('e-files')?.addEventListener('change', () => updateSelectedFilesList('e-files', 'e-files-list'));
+  const oppContainer = document.getElementById('e-opp-list');
+  if (oppContainer) {
+    oppContainer.innerHTML = '';
+    opportunityPairs.forEach((pair) => addOpportunityRow('e-opp-list', pair.opportunity, pair.eventId));
+    if (!opportunityPairs.length) addOpportunityRow('e-opp-list');
+  }
   document.getElementById('saveEditBtn').onclick = saveEdit;
   openModal('editModal');
 }
@@ -859,8 +928,8 @@ async function saveEdit() {
       email: readValue('e-email'),
       technologies: splitCommaValues(readValue('e-technologies')),
       status: readValue('e-status'),
-      opportunities: splitCommaValues(readValue('e-opportunities')),
-      eventId: readValue('e-eventId'),
+      opportunities: readOpportunityRows('e-opp-list'),
+      eventId: readOpportunityEventIds('e-opp-list'),
       notes: readValue('e-notes'),
       capabilityStatement: {
         overview: readValue('e-overview'),
@@ -990,6 +1059,9 @@ function renderTable(rows) {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase() || '')
       .join('');
+    const visibleTech = partner.technologies.slice(0, 3);
+    const overflowTech = partner.technologies.length - visibleTech.length;
+    const statusClass = statusClassName(partner.status);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
@@ -1002,15 +1074,26 @@ function renderTable(rows) {
         </div>
       </td>
       <td>${esc(partner.employee)}</td>
-      <td><div class="tech-tag-group">${partner.technologies.map((tech) => `<span class="tech-tag">${esc(tech)}</span>`).join('')}</div></td>
-      <td><span class="status-pill">${esc(partner.status)}</span></td>
-      <td>${partner.opportunities.length ? esc(partner.opportunities.join(', ')) : '—'}</td>
-      <td>${esc(partner.eventId || '—')}</td>
+      <td><span class="table-contact">${partner.email ? `<a class="company-link" href="mailto:${esc(partner.email)}">${esc(partner.email)}</a>` : '—'}</span></td>
       <td>
-        <div class="table-actions">
-          <button class="icon-btn" onclick="openViewModal('${escAttr(partner.recordId)}')" title="View">View</button>
-          <button class="icon-btn" onclick="openEditModal('${escAttr(partner.recordId)}')" title="Edit" ${!canCrudAccess() ? 'disabled' : ''}>Edit</button>
-          <button class="icon-btn danger" onclick="openDeleteModal('${escAttr(partner.recordId)}')" title="Delete" ${!canCrudAccess() ? 'disabled' : ''}>Delete</button>
+        <div class="tech-tag-group">
+          ${visibleTech.map((tech) => `<span class="tech-tag">${esc(tech)}</span>`).join('')}
+          ${overflowTech > 0 ? `<span class="tag tag-overflow">+${overflowTech}</span>` : ''}
+        </div>
+      </td>
+      <td><span class="status-pill ${statusClass}">${esc(partner.status)}</span></td>
+      <td><span class="table-date">${esc(formatDisplayDate(partner.createdAt))}</span></td>
+      <td>
+        <div class="table-actions compact">
+          <button class="icon-btn icon-btn-view" onclick="openViewModal('${escAttr(partner.recordId)}')" title="View" aria-label="View partner">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="icon-btn icon-btn-edit" onclick="openEditModal('${escAttr(partner.recordId)}')" title="Edit" aria-label="Edit partner" ${!canCrudAccess() ? 'disabled' : ''}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+          <button class="icon-btn icon-btn-delete" onclick="openDeleteModal('${escAttr(partner.recordId)}')" title="Delete" aria-label="Delete partner" ${!canCrudAccess() ? 'disabled' : ''}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/></svg>
+          </button>
         </div>
       </td>
     `;
@@ -1037,12 +1120,13 @@ function renderDashboard() {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
     .slice(0, 5)
     .map((partner) => `
-      <div class="recent-item">
-        <div>
-          <strong>${esc(partner.company)}</strong>
-          <span>${esc(partner.employee)} • ${esc(partner.status)}</span>
+      <div class="recent-item" onclick="openViewModal('${escAttr(partner.recordId)}')">
+        <div class="recent-avatar">${esc(getInitials(partner.company || 'P'))}</div>
+        <div class="recent-info">
+          <div class="recent-company">${esc(partner.company)}</div>
+          <div class="recent-employee">by ${esc(partner.employee || 'Unknown')}</div>
         </div>
-        <button class="btn btn-outline btn-xs" onclick="openViewModal('${escAttr(partner.recordId)}')">View</button>
+        <span class="status-pill ${statusClassName(partner.status)}">${esc(partner.status || '—')}</span>
       </div>
     `).join('');
 
@@ -1065,9 +1149,9 @@ function renderTopTechnologies() {
   document.getElementById('topTechnologies').innerHTML = top.length
     ? top.map(([tech, count]) => `
         <div class="tech-bar-row">
-          <span>${esc(tech)}</span>
+          <span class="tech-bar-name">${esc(tech)}</span>
           <div class="tech-bar-track"><div class="tech-bar-fill" style="width:${Math.min(count * 20, 100)}%"></div></div>
-          <strong>${count}</strong>
+          <strong class="tech-bar-count">${count}</strong>
         </div>
       `).join('')
     : '<div class="empty-text">No technologies available.</div>';
@@ -1085,20 +1169,46 @@ function renderEmployeeAnalytics() {
   });
 
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const maxCount = entries.length ? Math.max(...entries.map(([, count]) => count), 1) : 1;
   document.getElementById('employeeAnalytics').innerHTML = entries.length
-    ? entries.map(([employee, count]) => `<div class="metric-card"><strong>${esc(employee)}</strong><span>${count} partners</span></div>`).join('')
+    ? entries.map(([employee, count]) => `
+        <div class="employee-card">
+          <div class="employee-card-top">
+            <div class="employee-avatar">${esc(getInitials(employee || 'P'))}</div>
+            <div>
+              <div class="employee-name">${esc(employee)}</div>
+              <div class="employee-count">${count} partner${count === 1 ? '' : 's'} sourced</div>
+            </div>
+          </div>
+          <div class="employee-bar-track">
+            <div class="employee-bar-fill" style="width:${Math.max((count / maxCount) * 100, 18)}%"></div>
+          </div>
+        </div>
+      `).join('')
     : '<div class="empty-text">No employee activity available.</div>';
 }
 
 function renderStatusBreakdown() {
-  const counts = {};
+  const counts = WORKFLOW_STATUSES.reduce((accumulator, item) => {
+    accumulator[item.value] = 0;
+    return accumulator;
+  }, {});
+
   partners.forEach((partner) => {
-    counts[partner.status] = (counts[partner.status] || 0) + 1;
+    const status = partner.status || '';
+    counts[status] = (counts[status] || 0) + 1;
   });
 
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  document.getElementById('statusBreakdown').innerHTML = entries.length
-    ? entries.map(([status, count]) => `<div class="metric-card"><strong>${esc(status)}</strong><span>${count} partners</span></div>`).join('')
+  document.getElementById('statusBreakdown').innerHTML = WORKFLOW_STATUSES.length
+    ? WORKFLOW_STATUSES.map(({ value: status }) => {
+        const count = counts[status] || 0;
+        return `
+          <div class="status-breakdown-card ${statusCardClassName(status)}">
+            <div class="status-breakdown-num">${count}</div>
+            <div class="status-breakdown-label">${esc(status)}</div>
+          </div>
+        `;
+      }).join('')
     : '<div class="empty-text">No statuses available.</div>';
 }
 
@@ -1528,9 +1638,9 @@ function oppRowHTML(opportunity = '', eventId = '') {
   return `
     <div class="opp-row">
       <span class="opp-index"></span>
-      <input type="text" class="form-input opp-opportunity" placeholder="Opportunity Submitted / Reached Out To" value="${escAttr(opportunity)}" />
-      <input type="text" class="form-input opp-event" placeholder="Sourcing Event ID" value="${escAttr(eventId)}" />
-      <button type="button" class="btn-remove-opp" onclick="removeOpportunityRow(this)">Remove</button>
+      <input type="text" class="form-input opp-opportunity" placeholder="Opportunity name / RFP title" value="${escAttr(opportunity)}" />
+      <input type="text" class="form-input opp-event" placeholder="Event ID (e.g. EVT-2024-001)" value="${escAttr(eventId)}" />
+      <button type="button" class="btn-remove-opp" aria-label="Remove opportunity" onclick="removeOpportunityRow(this)">×</button>
     </div>
   `;
 }
@@ -1580,6 +1690,16 @@ function readOpportunityEventIds(containerId) {
     .map((row) => row.querySelector('.opp-event')?.value.trim() || '')
     .filter(Boolean)
     .join(' | ');
+}
+
+function buildOpportunityPairs(partner) {
+  const opportunities = Array.isArray(partner?.opportunities) ? partner.opportunities : [];
+  const eventIds = splitPipeValues(partner?.eventId || '');
+  const length = Math.max(opportunities.length, eventIds.length, 1);
+  return Array.from({ length }, (_, index) => ({
+    opportunity: opportunities[index] || '',
+    eventId: eventIds[index] || ''
+  })).filter((entry, index) => index === 0 || entry.opportunity || entry.eventId);
 }
 
 function parseCapability(value) {
@@ -1659,6 +1779,40 @@ function extractFileExtension(name) {
 function generateId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return `partner-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function formatDisplayDate(value) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+
+function getInitials(value) {
+  return String(value || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'P';
+}
+
+function statusClassName(status) {
+  return `status-${String(status || '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Za-z0-9-]/g, '') || 'default'}`;
+}
+
+function statusCardClassName(status) {
+  return `status-card-${String(status || '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Za-z0-9-]/g, '') || 'default'}`;
 }
 
 function readValue(id) {
