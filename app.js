@@ -10,16 +10,11 @@ const CONFIG = {
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJma2pvbGJta2Zuc2dkZ3hiaHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTA1MDgsImV4cCI6MjA4OTk2NjUwOH0.lqObEPXshQehkfKJgpAn7c-VOXcM6fNkkY904JCULdo',
   authStatusApiUrl: '/api/auth-status',
   userAdminApiUrl: '/api/admin-users',
-  siteId: 'YOUR_SHAREPOINT_SITE_ID',
-  driveId: 'YOUR_DOCUMENT_LIBRARY_DRIVE_ID',
-  workbookPath: '/Shared Documents/PartnerMasterData.xlsx',
-  partnerRootFolder: '/Shared Documents/Partners',
-  partnersTableName: 'TablePartners',
+  partnerFilesBucket: 'partner-files',
   readerGroups: ['PartnerPortal_Readers'],
   editorGroups: ['PartnerPortal_BD_Owners', 'PartnerPortal_Admins'],
   pptRefreshFlowUrl: '',
-  insightsApiUrl: '/api/partner-insights',
-  graphScopes: ['User.Read', 'Files.ReadWrite.All', 'Sites.ReadWrite.All', 'GroupMember.Read.All']
+  insightsApiUrl: '/api/partner-insights'
 };
 
 const WORKFLOW_STATUSES = [
@@ -57,8 +52,6 @@ const ROLE_OPTIONS = [
   { value: 'proposal_writer', label: 'Proposal Writer' },
   { value: 'hr_admin', label: 'HR Admin' }
 ];
-
-const GRAPH_ROOT = 'https://graph.microsoft.com/v1.0';
 
 let partners = [];
 let filteredPartners = [];
@@ -411,13 +404,15 @@ function closeSidebar() {
 
 async function loadPartners() {
   await ensureSignedIn();
-  showLoading('Syncing partner data from SharePoint...');
+  showLoading('Syncing partner data...');
   try {
-    const workbookItemId = await getWorkbookItemId();
-    const table = await graphGet(
-      `/drives/${CONFIG.driveId}/items/${workbookItemId}/workbook/tables/${encodeURIComponent(CONFIG.partnersTableName)}/rows`
-    );
-    partners = (table.value || []).map((row, index) => mapWorkbookRow(row, index)).filter(Boolean);
+    const { data, error } = await supabaseClient
+      .from('partners')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    partners = (data || []).map(mapSupabasePartner).filter(Boolean);
     filteredPartners = [...partners];
     updateCounts();
     updateEmployeeFilter();
@@ -434,8 +429,51 @@ async function tryLoadPartners() {
     await loadPartners();
   } catch (error) {
     console.warn('Partner backend not available yet:', error);
-    setSyncStatus('warning', 'Portal access ready. Backend sync still needs configuration.');
+    setSyncStatus('warning', 'Portal access ready. Partner data backend still needs configuration.');
   }
+}
+
+function mapSupabasePartner(row) {
+  if (!row) return null;
+
+  return {
+    rowIndex: null,
+    recordId: String(row.id || ''),
+    employee: String(row.employee || ''),
+    company: String(row.company || ''),
+    website: String(row.website || ''),
+    contact: String(row.contact || ''),
+    email: String(row.email || ''),
+    technologies: Array.isArray(row.technologies) ? row.technologies.filter(Boolean) : splitPipeValues(row.technologies),
+    status: String(row.status || ''),
+    opportunities: Array.isArray(row.opportunities) ? row.opportunities.filter(Boolean) : splitPipeValues(row.opportunities),
+    eventId: String(row.event_id || ''),
+    notes: String(row.notes || ''),
+    capabilityStatement: parseCapability(row.capability_statement),
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+    updatedBy: String(row.updated_by || '')
+  };
+}
+
+function partnerToSupabasePayload(partner) {
+  return {
+    id: partner.recordId,
+    employee: partner.employee,
+    company: partner.company,
+    website: partner.website,
+    contact: partner.contact,
+    email: partner.email,
+    technologies: partner.technologies,
+    status: partner.status,
+    opportunities: partner.opportunities,
+    event_id: partner.eventId,
+    notes: partner.notes,
+    capability_statement: partner.capabilityStatement,
+    created_at: partner.createdAt,
+    updated_at: partner.updatedAt,
+    updated_by: partner.updatedBy
+  };
 }
 
 function mapWorkbookRow(row, index) {
@@ -486,22 +524,22 @@ async function addPartner() {
   try {
     await ensureEditor();
     const partner = collectPartnerFromForm();
-    showLoading('Saving partner to SharePoint...');
-    const workbookItemId = await getWorkbookItemId();
+    showLoading('Saving partner...');
 
-    await graphPost(
-      `/drives/${CONFIG.driveId}/items/${workbookItemId}/workbook/tables/${encodeURIComponent(CONFIG.partnersTableName)}/rows/add`,
-      { index: null, values: [partnerToWorkbookRow(partner)] }
-    );
+    const { error } = await supabaseClient
+      .from('partners')
+      .insert(partnerToSupabasePayload(partner));
 
-    const folderPath = await ensurePartnerFolder(partner.company);
-    await uploadSelectedFiles(folderPath, document.getElementById('f-files')?.files);
+    if (error) throw error;
+
+    await uploadSelectedFiles(partner.recordId, document.getElementById('f-files')?.files);
     await triggerCapabilityRefresh(partner);
+    await writeAuditLog('partner_created', partner, { source: 'portal' });
     await loadPartners();
     clearAddForm();
     resetOpportunityRows('f-opp-list');
     navigate('database');
-    showToast('Partner saved to Microsoft 365.', 'success');
+    showToast('Partner saved successfully.', 'success');
   } catch (error) {
     handleError(error, 'Partner save failed.');
   } finally {
@@ -604,7 +642,7 @@ function buildViewModalHtml(partner, files) {
       <div class="detail-item"><span class="detail-label">Certifications</span><span class="detail-value">${esc(partner.capabilityStatement.certifications || '—')}</span></div>
       <div class="detail-item full-width"><span class="detail-label">Differentiators</span><div class="detail-value">${esc(partner.capabilityStatement.differentiators || '—')}</div></div>
       <div class="detail-item full-width"><span class="detail-label">Past Performance</span><div class="detail-value">${esc(partner.capabilityStatement.pastPerformance || '—')}</div></div>
-      <div class="detail-item full-width"><span class="detail-label">SharePoint Files</span><div class="file-link-list">${fileHtml}</div></div>
+      <div class="detail-item full-width"><span class="detail-label">Partner Files</span><div class="file-link-list">${fileHtml}</div></div>
       <div class="detail-item full-width">
         <span class="detail-label">Internal AI Capability View</span>
         <div class="detail-value">
@@ -744,17 +782,21 @@ async function saveEdit() {
     };
 
     validatePartner(updated);
-    showLoading('Updating partner in SharePoint...');
+    showLoading('Updating partner...');
 
-    const workbookItemId = await getWorkbookItemId();
-    await graphPatch(
-      `/drives/${CONFIG.driveId}/items/${workbookItemId}/workbook/tables/${encodeURIComponent(CONFIG.partnersTableName)}/rows/itemAt(index=${existing.rowIndex})/range`,
-      { values: [partnerToWorkbookRow(updated)] }
-    );
+    const payload = partnerToSupabasePayload(updated);
+    delete payload.created_at;
 
-    const folderPath = await ensurePartnerFolder(updated.company);
-    await uploadSelectedFiles(folderPath, document.getElementById('e-files')?.files);
+    const { error } = await supabaseClient
+      .from('partners')
+      .update(payload)
+      .eq('id', existing.recordId);
+
+    if (error) throw error;
+
+    await uploadSelectedFiles(updated.recordId, document.getElementById('e-files')?.files);
     await triggerCapabilityRefresh(updated);
+    await writeAuditLog('partner_updated', updated, { previous: existing });
     closeModal('editModal');
     await loadPartners();
     showToast('Partner updated successfully.', 'success');
@@ -785,15 +827,18 @@ async function confirmDelete() {
     const partner = partners.find((entry) => entry.recordId === currentDeleteId);
     if (!partner) throw new Error('Partner record could not be found.');
 
-    showLoading('Deleting partner from SharePoint...');
-    const workbookItemId = await getWorkbookItemId();
-    await graphDelete(
-      `/drives/${CONFIG.driveId}/items/${workbookItemId}/workbook/tables/${encodeURIComponent(CONFIG.partnersTableName)}/rows/itemAt(index=${partner.rowIndex})`
-    );
+    showLoading('Deleting partner...');
+    const { error } = await supabaseClient
+      .from('partners')
+      .delete()
+      .eq('id', partner.recordId);
 
+    if (error) throw error;
+
+    await writeAuditLog('partner_deleted', partner, { retainedFiles: true });
     closeModal('deleteModal');
     await loadPartners();
-    showToast('Partner deleted successfully.', 'success');
+    showToast('Partner deleted. Uploaded files were retained separately for recovery.', 'success');
   } catch (error) {
     handleError(error, 'Partner deletion failed.');
   } finally {
@@ -1003,40 +1048,53 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-async function ensurePartnerFolder(company) {
-  const root = encodeGraphPath(CONFIG.partnerRootFolder);
-  const folderName = sanitizeFolderName(company);
-
-  try {
-    await graphGet(`/drives/${CONFIG.driveId}/root:${root}/${encodeURIComponent(folderName)}`);
-  } catch (error) {
-    if (error.status !== 404) throw error;
-    await graphPost(`/drives/${CONFIG.driveId}/root:${root}:/children`, {
-      name: folderName,
-      folder: {},
-      '@microsoft.graph.conflictBehavior': 'rename'
-    });
-  }
-
-  return `${CONFIG.partnerRootFolder}/${folderName}`;
-}
-
 async function uploadSelectedFiles(folderPath, files) {
   const selectedFiles = Array.from(files || []).filter(Boolean);
   if (!selectedFiles.length) return;
+
   for (const file of selectedFiles) {
-    const buffer = await file.arrayBuffer();
-    const encodedFolder = encodeGraphPath(folderPath);
-    const encodedName = encodeURIComponent(file.name);
-    await graphPutBinary(`/drives/${CONFIG.driveId}/root:${encodedFolder}/${encodedName}:/content`, buffer, file.type || 'application/octet-stream');
+    const extension = extractFileExtension(file.name);
+    const baseName = sanitizeFileName(file.name.replace(/\.[^.]+$/, ''));
+    const versionedName = `${new Date().toISOString().replace(/[:.]/g, '-')}-${baseName}${extension}`;
+    const filePath = `${folderPath}/${versionedName}`;
+    const { error } = await supabaseClient.storage
+      .from(CONFIG.partnerFilesBucket)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) throw error;
   }
 }
 
 async function loadPartnerFiles(partner) {
-  const folderPath = `${CONFIG.partnerRootFolder}/${sanitizeFolderName(partner.company)}`;
-  const encodedFolder = encodeGraphPath(folderPath);
-  const result = await graphGet(`/drives/${CONFIG.driveId}/root:${encodedFolder}:/children`);
-  return result.value || [];
+  const folderPath = partner.recordId;
+  const { data, error } = await supabaseClient.storage
+    .from(CONFIG.partnerFilesBucket)
+    .list(folderPath, {
+      limit: 100,
+      offset: 0,
+      sortBy: { column: 'name', order: 'desc' }
+    });
+
+  if (error) throw error;
+
+  const files = await Promise.all((data || [])
+    .filter((entry) => entry.name && !entry.id?.endsWith('/'))
+    .map(async (entry) => {
+      const path = `${folderPath}/${entry.name}`;
+      const signed = await supabaseClient.storage
+        .from(CONFIG.partnerFilesBucket)
+        .createSignedUrl(path, 60 * 60);
+
+      return {
+        name: entry.name,
+        webUrl: signed.data?.signedUrl || '#'
+      };
+    }));
+
+  return files.filter((file) => file.webUrl && file.webUrl !== '#');
 }
 
 async function triggerCapabilityRefresh(partner) {
@@ -1047,7 +1105,7 @@ async function triggerCapabilityRefresh(partner) {
     body: JSON.stringify({
       company: partner.company,
       recordId: partner.recordId,
-      folderPath: `${CONFIG.partnerRootFolder}/${sanitizeFolderName(partner.company)}`,
+      folderPath: partner.recordId,
       capabilityStatement: partner.capabilityStatement
     })
   });
@@ -1113,11 +1171,6 @@ function formatInsightsHtml(data, mode) {
   `;
 }
 
-async function getWorkbookItemId() {
-  const item = await graphGet(`/drives/${CONFIG.driveId}/root:${encodeGraphPath(CONFIG.workbookPath)}`);
-  return item.id;
-}
-
 async function ensureSignedIn() {
   if (!currentUser) {
     openModal('authModal');
@@ -1140,6 +1193,32 @@ function canCrudAccess() {
 async function upsertPortalUser(profile) {
   const { error } = await supabaseClient.from('portal_users').upsert(profile, { onConflict: 'user_id' });
   if (error) throw error;
+}
+
+async function writeAuditLog(action, partner, extra = {}) {
+  try {
+    const payload = {
+      record_id: partner?.recordId || null,
+      action,
+      actor_email: currentUser?.email || null,
+      actor_role: currentRole || null,
+      payload: {
+        partner: partnerToSupabasePayload(partner || {}),
+        ...extra
+      },
+      created_at: new Date().toISOString()
+    };
+
+    const { error } = await supabaseClient
+      .from('partner_audit_logs')
+      .insert(payload);
+
+    if (error) {
+      console.warn('Audit log write skipped:', error.message || error);
+    }
+  } catch (error) {
+    console.warn('Audit log write skipped:', error);
+  }
 }
 
 function canManageAccess() {
@@ -1272,61 +1351,6 @@ async function fetchAuthStatus(email) {
   }
 
   return response.json();
-}
-
-async function graphGet(path) {
-  return graphRequest(path, { method: 'GET' });
-}
-
-async function graphPost(path, body) {
-  return graphRequest(path, { method: 'POST', body: JSON.stringify(body) });
-}
-
-async function graphPatch(path, body) {
-  return graphRequest(path, { method: 'PATCH', body: JSON.stringify(body) });
-}
-
-async function graphDelete(path) {
-  return graphRequest(path, { method: 'DELETE' });
-}
-
-async function graphPutBinary(path, body, contentType) {
-  return graphRequest(path, { method: 'PUT', body, contentType });
-}
-
-async function graphRequest(path, options = {}) {
-  accessToken = accessToken || await acquireToken();
-  const headers = {
-    Authorization: `Bearer ${accessToken}`
-  };
-
-  if (options.contentType) {
-    headers['Content-Type'] = options.contentType;
-  } else if (options.body && typeof options.body === 'string') {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  const response = await fetch(`${GRAPH_ROOT}${path}`, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body
-  });
-
-  if ((response.status === 401 || response.status === 403) && !options._retried) {
-    accessToken = await acquireToken();
-    return graphRequest(path, { ...options, _retried: true });
-  }
-
-  if (!response.ok) {
-    const text = await response.text();
-    const error = new Error(text || `Graph request failed with ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-
-  if (response.status === 204) return {};
-  const contentType = response.headers.get('content-type') || '';
-  return contentType.includes('application/json') ? response.json() : response.text();
 }
 function clearAddForm() {
   [
@@ -1484,15 +1508,17 @@ function normalizeWebsite(value) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
-function sanitizeFolderName(value) {
-  return String(value || 'Partner')
-    .replace(/[\\/:*?"<>|#%&{}~]/g, '')
+function sanitizeFileName(value) {
+  return String(value || 'file')
+    .replace(/[\\/:*?"<>|#%&{}~]/g, '-')
+    .replace(/\s+/g, '-')
     .trim()
-    .slice(0, 100) || 'Partner';
+    .slice(0, 100) || 'file';
 }
 
-function encodeGraphPath(path) {
-  return path.split('/').map((part) => encodeURIComponent(part)).join('/');
+function extractFileExtension(name) {
+  const match = String(name || '').match(/(\.[^.]+)$/);
+  return match ? match[1].toLowerCase() : '';
 }
 
 function generateId() {
