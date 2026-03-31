@@ -64,6 +64,7 @@ let currentPortalAccess = null;
 let accessToken = '';
 let supabaseClient = null;
 let authMode = 'signin';
+let recoverySessionActive = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSupabase();
@@ -94,6 +95,17 @@ function initializeSupabase() {
     auth: {
       persistSession: true,
       autoRefreshToken: true
+    }
+  });
+
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY' || getAuthFlowType() === 'recovery') {
+      recoverySessionActive = true;
+      currentUser = normalizeUser(session?.user || {});
+      accessToken = session?.access_token || accessToken;
+      switchAuthMode('reset');
+      openModal('authModal');
+      setAuthStatus('info', 'Set a new password for your account.');
     }
   });
 }
@@ -176,6 +188,12 @@ function getPortalUrl() {
   return window.location.origin === 'null'
     ? window.location.href.split('#')[0]
     : `${window.location.origin}${window.location.pathname}`;
+}
+
+function getAuthFlowType() {
+  const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+  const search = new URLSearchParams(window.location.search || '');
+  return hash.get('type') || search.get('type') || '';
 }
 
 async function acquireToken() {
@@ -293,6 +311,59 @@ async function signUp() {
     );
   } catch (error) {
     handleError(error, 'Portal sign-up failed.');
+  }
+}
+
+async function startPasswordReset() {
+  try {
+    const email = readValue('authEmail').toLowerCase();
+    validateAllowedDomain(email);
+    const authStatus = await fetchAuthStatus(email);
+    if (!authStatus.exists) {
+      throw new Error('No portal account exists for this email. Use Sign Up first.');
+    }
+
+    setAuthStatus('info', 'Sending password reset email...');
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: getPortalUrl()
+    });
+
+    if (error) throw error;
+    setAuthStatus('success', `Password reset email sent to <strong>${esc(email)}</strong>. Open the link in that email to set a new password.`);
+  } catch (error) {
+    handleError(error, 'Password reset request failed.');
+  }
+}
+
+async function completePasswordReset() {
+  try {
+    if (!recoverySessionActive) {
+      throw new Error('Open the password reset link from your email to continue.');
+    }
+
+    const password = readValue('authPassword');
+    const confirmPassword = readValue('authResetConfirmPassword');
+
+    if (!password || password.length < 8) {
+      throw new Error('Use a new password with at least 8 characters.');
+    }
+    if (password !== confirmPassword) {
+      throw new Error('Password and Confirm New Password must match.');
+    }
+
+    setAuthStatus('info', 'Updating your password...');
+    const { error } = await supabaseClient.auth.updateUser({ password });
+    if (error) throw error;
+
+    recoverySessionActive = false;
+    await supabaseClient.auth.signOut();
+    resetPortalState();
+    resetAuthForm(true);
+    switchAuthMode('signin');
+    setAuthStatus('success', 'Password updated successfully. Sign in with your new password.');
+    openModal('authModal');
+  } catch (error) {
+    handleError(error, 'Password reset failed.');
   }
 }
 
@@ -1597,7 +1668,9 @@ function showAuthHint() {
     'info',
     authMode === 'signup'
       ? `Create your portal account with your approved company email and a password, then confirm the email from your inbox. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
-      : 'Sign in with your approved company email and password after your email is confirmed and your access request is approved.'
+      : authMode === 'reset'
+        ? 'Enter your new password to complete the secure password reset flow.'
+        : 'Sign in with your approved company email and password after your email is confirmed and your access request is approved.'
   );
 }
 
@@ -1619,18 +1692,19 @@ function updateAuthUi() {
 }
 
 function openModal(id) {
-  if (id === 'authModal') resetAuthForm(true);
+  if (id === 'authModal' && !recoverySessionActive) resetAuthForm(true);
   document.getElementById(id)?.classList.remove('hidden');
 }
 
 function closeModal(id) {
   document.getElementById(id)?.classList.add('hidden');
-  if (id === 'authModal') resetAuthForm(true);
+  if (id === 'authModal' && !recoverySessionActive) resetAuthForm(true);
 }
 
 function resetAuthForm(resetMode = false) {
   if (resetMode) authMode = 'signin';
-  ['authEmail', 'authPassword', 'authConfirmPassword', 'authFullName'].forEach((id) => {
+  if (resetMode) recoverySessionActive = false;
+  ['authEmail', 'authPassword', 'authConfirmPassword', 'authResetConfirmPassword', 'authFullName'].forEach((id) => {
     const field = document.getElementById(id);
     if (field) {
       field.value = '';
@@ -1667,24 +1741,39 @@ function updateSelectedFilesList(inputId, listId) {
 }
 
 function switchAuthMode(mode) {
-  authMode = mode === 'signup' ? 'signup' : 'signin';
+  authMode = ['signup', 'reset'].includes(mode) ? mode : 'signin';
   document.getElementById('signInModeBtn')?.classList.toggle('active', authMode === 'signin');
   document.getElementById('signUpModeBtn')?.classList.toggle('active', authMode === 'signup');
   document.querySelectorAll('.auth-signup-only').forEach((field) => {
     field.classList.toggle('hidden', authMode !== 'signup');
   });
+  document.querySelectorAll('.auth-signin-only').forEach((field) => {
+    field.classList.toggle('hidden', authMode !== 'signin');
+  });
+  document.querySelectorAll('.auth-reset-only').forEach((field) => {
+    field.classList.toggle('hidden', authMode !== 'reset');
+  });
+  document.getElementById('signInModeBtn')?.classList.toggle('hidden', authMode === 'reset');
+  document.getElementById('signUpModeBtn')?.classList.toggle('hidden', authMode === 'reset');
   const primary = document.getElementById('authPrimaryBtn');
   const switchBtn = document.getElementById('authSwitchBtn');
-  if (primary) primary.textContent = authMode === 'signup' ? 'Sign Up' : 'Sign In';
-  if (switchBtn) switchBtn.textContent = authMode === 'signup' ? 'Back To Sign In' : 'Need An Account?';
+  if (primary) primary.textContent = authMode === 'signup' ? 'Sign Up' : authMode === 'reset' ? 'Update Password' : 'Sign In';
+  if (switchBtn) {
+    switchBtn.textContent = authMode === 'signup' ? 'Back To Sign In' : authMode === 'reset' ? 'Back To Sign In' : 'Need An Account?';
+    switchBtn.classList.toggle('hidden', false);
+  }
   showAuthHint();
 }
 
 function toggleAuthMode() {
-  switchAuthMode(authMode === 'signup' ? 'signin' : 'signup');
+  switchAuthMode(authMode === 'signup' || authMode === 'reset' ? 'signin' : 'signup');
 }
 
 async function handleAuthPrimary() {
+  if (authMode === 'reset') {
+    await completePasswordReset();
+    return;
+  }
   if (authMode === 'signup') {
     await signUp();
     return;

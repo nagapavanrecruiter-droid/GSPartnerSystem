@@ -901,6 +901,22 @@ body::before {
   color: var(--text-secondary);
 }
 
+.auth-inline-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent-dark);
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 160ms ease, transform 140ms var(--ease-out);
+}
+
+.auth-inline-link:hover {
+  color: var(--accent);
+}
+
 .auth-mode-toggle {
   display: inline-flex;
   gap: 6px;

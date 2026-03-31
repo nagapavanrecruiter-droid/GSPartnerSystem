@@ -411,11 +411,21 @@
           <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authPassword', this)">Show</button>
         </div>
       </div>
+      <div class="auth-signin-only" style="margin-top:10px">
+        <button type="button" class="auth-inline-link" onclick="startPasswordReset()">Forgot Password?</button>
+      </div>
       <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
         <label class="form-label">Confirm Password <span class="form-hint">(for signup)</span></label>
         <div class="password-wrap">
           <input type="password" id="authConfirmPassword" class="form-input" placeholder="Re-enter your password" />
           <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authConfirmPassword', this)">Show</button>
+        </div>
+      </div>
+      <div class="form-group full-width auth-reset-only hidden" style="margin-top:12px">
+        <label class="form-label">Confirm New Password <span class="form-hint">(for reset)</span></label>
+        <div class="password-wrap">
+          <input type="password" id="authResetConfirmPassword" class="form-input" placeholder="Re-enter your new password" />
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('authResetConfirmPassword', this)">Show</button>
         </div>
       </div>
       <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
