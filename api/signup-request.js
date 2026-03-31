@@ -53,11 +53,22 @@ module.exports = async (req, res) => {
       return;
     }
 
-    if (assignedRole === 'super_admin' || status === 'approved') {
-      const superAdminCount = await getApprovedSuperAdminCount();
-      if (superAdminCount > 0 && assignedRole === 'super_admin') {
-        res.status(400).json({ error: 'Only one approved Super Admin is allowed.' });
+    if (status === 'approved') {
+      const approvedAccessAdminCount = await getApprovedAccessAdminCount();
+      if (assignedRole === 'shared_admin' && approvedAccessAdminCount > 0) {
+        res.status(400).json({ error: 'A Shared Admin can only be auto-approved when no admin account exists yet.' });
         return;
+      }
+      if (assignedRole === 'super_admin') {
+        const superAdminCount = await getApprovedSuperAdminCount();
+        if (superAdminCount > 0) {
+          res.status(400).json({ error: 'Only one approved Super Admin is allowed.' });
+          return;
+        }
+        if (approvedAccessAdminCount > 0) {
+          res.status(400).json({ error: 'A Super Admin cannot be auto-approved after admin accounts already exist.' });
+          return;
+        }
       }
     }
 
@@ -131,4 +142,24 @@ async function getApprovedSuperAdminCount() {
 
   const rows = await response.json();
   return rows.length;
+}
+
+async function getApprovedAccessAdminCount() {
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/rest/v1/portal_users?status=eq.approved&select=user_id,assigned_role,shared_admin`,
+    {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        Accept: 'application/json'
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Could not validate approved admin count.');
+  }
+
+  const rows = await response.json();
+  return rows.filter((row) => row.shared_admin || row.assigned_role === 'super_admin').length;
 }

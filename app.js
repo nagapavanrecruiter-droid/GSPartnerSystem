@@ -247,11 +247,15 @@ async function signUp() {
     }
 
     setAuthStatus('info', 'Creating your account and sending a confirmation email...');
-    const superAdminCount = await getApprovedSuperAdminCount();
+    const approvedAccessAdminCount = await getApprovedAccessAdminCount();
+    const shouldBootstrapSharedAdmin =
+      requestedRole === 'shared_admin' &&
+      CONFIG.adminAllowedDomains.map((entry) => entry.toLowerCase()).includes(email.split('@')[1] || '') &&
+      approvedAccessAdminCount === 0;
     const shouldBootstrapSuperAdmin =
       requestedRole === 'super_admin' &&
       email.endsWith(`@${CONFIG.superAdminDomain}`) &&
-      superAdminCount === 0;
+      approvedAccessAdminCount === 0;
 
     const { data, error } = await supabaseClient.auth.signUp({
       email,
@@ -272,9 +276,9 @@ async function signUp() {
       email,
       full_name: fullName,
       requested_role: requestedRole,
-      assigned_role: shouldBootstrapSuperAdmin ? 'super_admin' : 'hr_admin',
-      status: shouldBootstrapSuperAdmin ? 'approved' : 'pending',
-      shared_admin: false
+      assigned_role: shouldBootstrapSuperAdmin ? 'super_admin' : (shouldBootstrapSharedAdmin ? 'shared_admin' : 'hr_admin'),
+      status: (shouldBootstrapSuperAdmin || shouldBootstrapSharedAdmin) ? 'approved' : 'pending',
+      shared_admin: shouldBootstrapSharedAdmin
     });
 
     await supabaseClient.auth.signOut();
@@ -283,7 +287,9 @@ async function signUp() {
       'success',
       shouldBootstrapSuperAdmin
         ? `Your account was created. Check <strong>${esc(email)}</strong> and confirm your email before signing in.`
-        : `Your signup request was created. Check <strong>${esc(email)}</strong>, confirm your email, then wait for admin approval.`
+        : shouldBootstrapSharedAdmin
+          ? `Your shared admin account was created. Check <strong>${esc(email)}</strong> and confirm your email before signing in.`
+          : `Your signup request was created. Check <strong>${esc(email)}</strong>, confirm your email, then wait for admin approval.`
     );
   } catch (error) {
     handleError(error, 'Portal sign-up failed.');
@@ -1235,6 +1241,16 @@ async function getApprovedSuperAdminCount() {
 
   if (error) throw error;
   return count || 0;
+}
+
+async function getApprovedAccessAdminCount() {
+  const { data, error } = await supabaseClient
+    .from('portal_users')
+    .select('user_id, assigned_role, shared_admin')
+    .eq('status', 'approved');
+
+  if (error) throw error;
+  return (data || []).filter((user) => user.shared_admin || user.assigned_role === 'super_admin').length;
 }
 
 async function openAdminModal() {
