@@ -51,6 +51,20 @@ alter table public.portal_users
 add column if not exists access_level text not null default 'read';
 ```
 
+If your table already exists and you hit `column pu.access_level does not exist`, run this first by itself before running the policy section:
+
+```sql
+alter table public.portal_users
+add column if not exists access_level text not null default 'read';
+
+update public.portal_users
+set access_level = case
+  when shared_admin = true or assigned_role = 'super_admin' then 'edit'
+  else 'read'
+end
+where access_level is null or access_level not in ('read', 'edit');
+```
+
 ## 3. Audit Log Table
 
 ```sql

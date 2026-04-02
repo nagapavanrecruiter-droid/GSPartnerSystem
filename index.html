@@ -538,6 +538,19 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="employeeModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title" id="employeeModalTitle">Employee Overview</h3>
+      <button class="modal-close" onclick="closeModal('employeeModal')">&#10005;</button>
+    </div>
+    <div class="modal-body" id="employeeModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('employeeModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast hidden" id="toast">
   <div class="toast-icon" id="toastIcon"></div>
   <span id="toastMessage"></span>

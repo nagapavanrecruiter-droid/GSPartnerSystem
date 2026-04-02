@@ -1184,15 +1184,19 @@ function renderAnalytics() {
 
 function renderEmployeeAnalytics() {
   const counts = {};
+  const wonCounts = {};
   partners.forEach((partner) => {
     counts[partner.employee] = (counts[partner.employee] || 0) + 1;
+    if (partner.status === 'Contract Won') {
+      wonCounts[partner.employee] = (wonCounts[partner.employee] || 0) + 1;
+    }
   });
 
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   const maxCount = entries.length ? Math.max(...entries.map(([, count]) => count), 1) : 1;
   document.getElementById('employeeAnalytics').innerHTML = entries.length
     ? entries.map(([employee, count]) => `
-        <div class="employee-card">
+        <button class="employee-card" type="button" onclick="openEmployeeModal('${escAttr(employee)}')">
           <div class="employee-card-top">
             <div class="employee-avatar">${esc(getInitials(employee || 'P'))}</div>
             <div>
@@ -1200,12 +1204,66 @@ function renderEmployeeAnalytics() {
               <div class="employee-count">${count} partner${count === 1 ? '' : 's'} sourced</div>
             </div>
           </div>
+          <div class="employee-stats-line">
+            <span>${wonCounts[employee] || 0} contract${(wonCounts[employee] || 0) === 1 ? '' : 's'} won</span>
+            <span>View partners</span>
+          </div>
           <div class="employee-bar-track">
             <div class="employee-bar-fill" style="width:${Math.max((count / maxCount) * 100, 18)}%"></div>
           </div>
-        </div>
+        </button>
       `).join('')
     : '<div class="empty-text">No employee activity available.</div>';
+}
+
+function openEmployeeModal(employee) {
+  const employeeName = String(employee || '').trim();
+  if (!employeeName) return;
+
+  const employeePartners = partners
+    .filter((partner) => String(partner.employee || '').trim().toLowerCase() === employeeName.toLowerCase())
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+
+  const totalPartners = employeePartners.length;
+  const contractsWon = employeePartners.filter((partner) => partner.status === 'Contract Won').length;
+
+  document.getElementById('employeeModalTitle').textContent = `${employeeName} Overview`;
+  document.getElementById('employeeModalBody').innerHTML = `
+    <div class="employee-modal-summary">
+      <div class="employee-modal-card">
+        <div class="employee-modal-label">Employee</div>
+        <div class="employee-modal-value">${esc(employeeName)}</div>
+      </div>
+      <div class="employee-modal-card">
+        <div class="employee-modal-label">Partners In System</div>
+        <div class="employee-modal-value">${totalPartners}</div>
+      </div>
+      <div class="employee-modal-card success">
+        <div class="employee-modal-label">Contracts Won</div>
+        <div class="employee-modal-value">${contractsWon}</div>
+      </div>
+    </div>
+    <div class="modal-section-title">Partners Managed</div>
+    <div class="employee-partner-list">
+      ${employeePartners.length ? employeePartners.map((partner) => `
+        <button class="employee-partner-row" type="button" onclick="closeModal('employeeModal'); openViewModal('${escAttr(partner.recordId)}')">
+          <div class="employee-partner-left">
+            <div class="employee-partner-avatar">${esc(getInitials(partner.company || 'P'))}</div>
+            <div class="employee-partner-meta">
+              <div class="employee-partner-company">${esc(partner.company || 'Partner')}</div>
+              <div class="employee-partner-sub">${esc(partner.contact || partner.email || 'No contact')}</div>
+            </div>
+          </div>
+          <div class="employee-partner-right">
+            <span class="status-pill ${statusClassName(partner.status)}">${esc(partner.status || '—')}</span>
+            <span class="employee-partner-date">${esc(formatDisplayDate(partner.createdAt))}</span>
+          </div>
+        </button>
+      `).join('') : '<div class="empty-text">No partners found for this employee.</div>'}
+    </div>
+  `;
+
+  openModal('employeeModal');
 }
 
 function renderStatusBreakdown() {
