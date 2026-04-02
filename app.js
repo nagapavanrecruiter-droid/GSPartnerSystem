@@ -65,6 +65,7 @@ let accessToken = '';
 let supabaseClient = null;
 let authMode = 'signin';
 let recoverySessionActive = false;
+let currentAccessLevel = 'read';
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSupabase();
@@ -179,6 +180,7 @@ function resetPortalState() {
   currentUser = null;
   currentPortalAccess = null;
   currentRole = 'anonymous';
+  currentAccessLevel = 'read';
   accessToken = '';
   partners = [];
   filteredPartners = [];
@@ -407,6 +409,13 @@ async function resolveRole() {
 
   currentPortalAccess = data;
   currentRole = data.shared_admin ? 'shared_admin' : (data.assigned_role || 'hr_admin');
+  currentAccessLevel = inferAccessLevel(data);
+}
+
+function inferAccessLevel(accessProfile) {
+  if (!accessProfile) return 'read';
+  if (accessProfile.shared_admin || accessProfile.assigned_role === 'super_admin') return 'edit';
+  return String(accessProfile.access_level || 'read').toLowerCase() === 'edit' ? 'edit' : 'read';
 }
 
 function validateCompanyEmail(email) {
@@ -449,6 +458,11 @@ function setupNavigation() {
 }
 
 function navigate(page) {
+  if (page === 'add' && !canCrudAccess()) {
+    showToast('Your account has read-only access.', 'warning');
+    return;
+  }
+
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
   document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
 
@@ -811,7 +825,7 @@ function buildViewModalHtml(partner, files) {
 
 function openEditModal(id) {
   if (!canCrudAccess()) {
-    showToast('You have read-only access.', 'warning');
+    showToast('Your account has read-only access.', 'warning');
     return;
   }
 
@@ -976,7 +990,7 @@ async function saveEdit() {
 
 function openDeleteModal(id) {
   if (!canCrudAccess()) {
-    showToast('You have read-only access.', 'warning');
+    showToast('Your account has read-only access.', 'warning');
     return;
   }
 
@@ -1092,12 +1106,14 @@ function renderTable(rows) {
           <button class="icon-btn icon-btn-view" onclick="openViewModal('${escAttr(partner.recordId)}')" title="View" aria-label="View partner">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
-          <button class="icon-btn icon-btn-edit" onclick="openEditModal('${escAttr(partner.recordId)}')" title="Edit" aria-label="Edit partner" ${!canCrudAccess() ? 'disabled' : ''}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          </button>
-          <button class="icon-btn icon-btn-delete" onclick="openDeleteModal('${escAttr(partner.recordId)}')" title="Delete" aria-label="Delete partner" ${!canCrudAccess() ? 'disabled' : ''}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/></svg>
-          </button>
+          ${canCrudAccess() ? `
+            <button class="icon-btn icon-btn-edit" onclick="openEditModal('${escAttr(partner.recordId)}')" title="Edit" aria-label="Edit partner">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            </button>
+            <button class="icon-btn icon-btn-delete" onclick="openDeleteModal('${escAttr(partner.recordId)}')" title="Delete" aria-label="Delete partner">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          ` : ''}
         </div>
       </td>
     `;
@@ -1268,6 +1284,9 @@ function exportCSV() {
 async function uploadSelectedFiles(folderPath, files) {
   const selectedFiles = Array.from(files || []).filter(Boolean);
   if (!selectedFiles.length) return;
+  if (!canCrudAccess()) {
+    throw new Error('Your account has read-only access and cannot upload files.');
+  }
 
   for (const file of selectedFiles) {
     const extension = extractFileExtension(file.name);
@@ -1512,12 +1531,12 @@ async function ensureSignedIn() {
 async function ensureEditor() {
   await ensureSignedIn();
   if (!canCrudAccess()) {
-    throw new Error('Your account has read-only access. Ask an admin to grant CRUD access.');
+    throw new Error('Your account has read-only access. Ask an admin to grant Edit access.');
   }
 }
 
 function canCrudAccess() {
-  return ['super_admin', 'shared_admin', 'business_development_executive', 'account_executive', 'bid_management', 'proposal_writer'].includes(currentRole);
+  return canManageAccess() || currentAccessLevel === 'edit';
 }
 
 async function upsertPortalUser(profile) {
@@ -1613,11 +1632,15 @@ async function loadAdminUsers() {
       <div class="admin-user-card">
         <div class="admin-user-email">${esc(user.email)}</div>
         <div class="admin-user-meta">
-          Requested: ${esc(formatRoleLabel(user.requested_role || 'hr_admin'))} | Current: ${esc(formatRoleLabel(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin')))} | Status: ${esc(user.status || 'pending')}
+          Requested: ${esc(formatRoleLabel(user.requested_role || 'hr_admin'))} | Current: ${esc(formatRoleLabel(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin')))} | Access: ${esc(formatAccessLabel(user.access_level || inferAccessLevel(user)))} | Status: ${esc(user.status || 'pending')}
         </div>
         <div class="admin-user-actions">
           <select id="admin-role-${escAttr(user.user_id)}" class="filter-select">
             ${buildAdminRoleOptions(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin'))}
+          </select>
+          <select id="admin-access-${escAttr(user.user_id)}" class="filter-select">
+            <option value="read" ${String(user.access_level || inferAccessLevel(user)) === 'read' ? 'selected' : ''}>Read Access</option>
+            <option value="edit" ${String(user.access_level || inferAccessLevel(user)) === 'edit' ? 'selected' : ''}>Edit Access</option>
           </select>
           <button class="btn btn-outline btn-sm" onclick="approvePortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Approve</button>
           <button class="btn btn-danger btn-sm" onclick="rejectPortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Reject</button>
@@ -1638,6 +1661,10 @@ function formatRoleLabel(roleValue) {
   return ROLE_OPTIONS.find((role) => role.value === roleValue)?.label || roleValue;
 }
 
+function formatAccessLabel(accessLevel) {
+  return String(accessLevel || 'read').toLowerCase() === 'edit' ? 'Edit Access' : 'Read Access';
+}
+
 async function approvePortalUser(userId, email) {
   await updatePortalUserAccess(userId, email, 'approved');
 }
@@ -1648,7 +1675,9 @@ async function rejectPortalUser(userId, email) {
 
 async function updatePortalUserAccess(userId, email, status) {
   const roleField = document.getElementById(`admin-role-${userId}`);
+  const accessField = document.getElementById(`admin-access-${userId}`);
   const assignedRole = roleField?.value || 'hr_admin';
+  const accessLevel = accessField?.value === 'edit' ? 'edit' : 'read';
   try {
     const response = await fetch(CONFIG.userAdminApiUrl, {
       method: 'POST',
@@ -1661,6 +1690,7 @@ async function updatePortalUserAccess(userId, email, status) {
         targetEmail: email,
         status,
         assignedRole,
+        accessLevel,
         sharedAdmin: assignedRole === 'shared_admin'
       })
     });
@@ -1978,17 +2008,26 @@ function showAuthHint() {
 function updateAuthUi() {
   const button = document.getElementById('authBtn');
   const adminButton = document.getElementById('adminBtn');
+  const topbarAddButton = document.getElementById('topbarAddPartnerBtn');
+  const databaseAddButton = document.getElementById('databaseAddPartnerBtn');
+  const addNavLink = document.getElementById('navAddPartner');
   if (!button) return;
 
   if (!currentUser) {
     button.textContent = 'Sign In';
     adminButton?.classList.add('hidden');
+    topbarAddButton?.classList.add('hidden');
+    databaseAddButton?.classList.add('hidden');
+    addNavLink?.classList.add('hidden');
     setSyncStatus('idle', 'Sign in required');
     return;
   }
 
   button.textContent = 'Sign Out';
   adminButton?.classList.toggle('hidden', !canManageAccess());
+  topbarAddButton?.classList.toggle('hidden', !canCrudAccess());
+  databaseAddButton?.classList.toggle('hidden', !canCrudAccess());
+  addNavLink?.classList.toggle('hidden', !canCrudAccess());
   setSyncStatus('ready', `${formatRoleLabel(currentRole)} access`);
 }
 

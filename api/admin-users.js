@@ -1,5 +1,15 @@
 'use strict';
 
+const VALID_ROLES = [
+  'super_admin',
+  'shared_admin',
+  'business_development_executive',
+  'account_executive',
+  'bid_management',
+  'proposal_writer',
+  'hr_admin'
+];
+
 module.exports = async (req, res) => {
   try {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -36,6 +46,7 @@ module.exports = async (req, res) => {
     const userId = String(body.userId || '').trim();
     const status = String(body.status || '').trim();
     const assignedRole = String(body.assignedRole || 'hr_admin').trim();
+    const accessLevel = String(body.accessLevel || 'read').trim().toLowerCase() === 'edit' ? 'edit' : 'read';
     const sharedAdmin = assignedRole === 'shared_admin' || Boolean(body.sharedAdmin);
     const targetDomain = String(body.targetEmail || '').split('@')[1]?.toLowerCase() || '';
 
@@ -75,6 +86,7 @@ module.exports = async (req, res) => {
       body: JSON.stringify({
         status,
         assigned_role: sharedAdmin ? 'shared_admin' : assignedRole,
+        access_level: sharedAdmin || assignedRole === 'super_admin' ? 'edit' : accessLevel,
         shared_admin: sharedAdmin,
         approved_by: actor.email,
         approved_at: new Date().toISOString()

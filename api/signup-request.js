@@ -78,6 +78,7 @@ module.exports = async (req, res) => {
       full_name: fullName,
       requested_role: requestedRole,
       assigned_role: sharedAdmin ? 'shared_admin' : assignedRole,
+      access_level: sharedAdmin || assignedRole === 'super_admin' ? 'edit' : 'read',
       status,
       shared_admin: sharedAdmin
     };
