@@ -486,6 +486,20 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="filePreviewModal">
+  <div class="modal modal-xl modal-file-preview">
+    <div class="modal-header">
+      <h3 class="modal-title" id="filePreviewTitle">File Preview</h3>
+      <button class="modal-close" onclick="closeFilePreview()">&#10005;</button>
+    </div>
+    <div class="modal-body file-preview-body" id="filePreviewBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeFilePreview()">Close</button>
+      <a class="btn btn-outline" id="filePreviewOpenLink" href="#" target="_blank" rel="noopener">Open Original</a>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="editModal">
   <div class="modal modal-lg">
     <div class="modal-header">

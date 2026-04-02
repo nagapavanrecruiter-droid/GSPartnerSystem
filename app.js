@@ -701,7 +701,11 @@ function buildViewModalHtml(partner, files) {
     ? partner.opportunities.map((opp) => `<span class="tag">${esc(opp)}</span>`).join('')
     : '<span class="empty-text">No opportunities added</span>';
   const fileHtml = files.length
-    ? files.map((file) => `<a class="file-link" href="${file.webUrl}" target="_blank" rel="noopener">${esc(file.name)}</a>`).join('')
+    ? files.map((file) => `
+        <button class="file-link" type="button" onclick="openFilePreview('${escAttr(file.name)}', '${escAttr(file.webUrl)}')">
+          ${esc(file.name)}
+        </button>
+      `).join('')
     : '<span class="empty-text">No files uploaded yet</span>';
   const companyInitials = (partner.company || 'P')
     .split(/\s+/)
@@ -1308,6 +1312,119 @@ async function loadPartnerFiles(partner) {
     }));
 
   return files.filter((file) => file.webUrl && file.webUrl !== '#');
+}
+
+function openFilePreview(name, url) {
+  const safeName = String(name || 'Partner File');
+  const safeUrl = String(url || '');
+  if (!safeUrl) {
+    showToast('File preview is unavailable for this document.', 'warning');
+    return;
+  }
+
+  const extension = extractFileExtension(safeName);
+  const previewBody = document.getElementById('filePreviewBody');
+  const title = document.getElementById('filePreviewTitle');
+  const openLink = document.getElementById('filePreviewOpenLink');
+  if (!previewBody || !title || !openLink) return;
+
+  title.textContent = safeName;
+  openLink.href = safeUrl;
+  previewBody.innerHTML = buildFilePreviewHtml(safeName, safeUrl, extension);
+  openModal('filePreviewModal');
+}
+
+function closeFilePreview() {
+  const previewBody = document.getElementById('filePreviewBody');
+  const title = document.getElementById('filePreviewTitle');
+  const openLink = document.getElementById('filePreviewOpenLink');
+  if (previewBody) previewBody.innerHTML = '';
+  if (title) title.textContent = 'File Preview';
+  if (openLink) openLink.href = '#';
+  closeModal('filePreviewModal');
+}
+
+function buildFilePreviewHtml(name, url, extension) {
+  const ext = String(extension || '').toLowerCase();
+  const escapedUrl = escAttr(url);
+  const escapedName = esc(name);
+  const officeExts = new Set(['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
+  const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']);
+  const textExts = new Set(['.txt', '.csv', '.json', '.md', '.xml', '.log']);
+  const mediaVideoExts = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv']);
+  const mediaAudioExts = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
+
+  if (ext === '.pdf') {
+    return `
+      <div class="file-preview-shell">
+        <iframe class="file-preview-frame" src="${escapedUrl}" title="${escapedName}"></iframe>
+      </div>
+    `;
+  }
+
+  if (imageExts.has(ext)) {
+    return `
+      <div class="file-preview-image-wrap">
+        <img class="file-preview-image" src="${escapedUrl}" alt="${escapedName}" />
+      </div>
+    `;
+  }
+
+  if (mediaVideoExts.has(ext)) {
+    return `
+      <div class="file-preview-shell media">
+        <video class="file-preview-media" controls preload="metadata">
+          <source src="${escapedUrl}" />
+          Your browser could not play this video.
+        </video>
+      </div>
+    `;
+  }
+
+  if (mediaAudioExts.has(ext)) {
+    return `
+      <div class="file-preview-audio-wrap">
+        <div class="file-preview-fallback">
+          <div class="file-preview-fallback-title">${escapedName}</div>
+          <div class="file-preview-fallback-text">Audio file preview</div>
+          <audio class="file-preview-audio" controls preload="metadata">
+            <source src="${escapedUrl}" />
+            Your browser could not play this audio file.
+          </audio>
+        </div>
+      </div>
+    `;
+  }
+
+  if (textExts.has(ext)) {
+    return `
+      <div class="file-preview-shell">
+        <iframe class="file-preview-frame" src="${escapedUrl}" title="${escapedName}"></iframe>
+      </div>
+    `;
+  }
+
+  if (officeExts.has(ext)) {
+    const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+    return `
+      <div class="file-preview-shell">
+        <iframe class="file-preview-frame" src="${escAttr(officeViewerUrl)}" title="${escapedName}"></iframe>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="file-preview-fallback">
+      <div class="file-preview-fallback-title">${escapedName}</div>
+      <div class="file-preview-fallback-text">
+        This file type cannot be rendered natively in every browser, but it stays inside the portal flow.
+        Use the button below to open the original file if the embedded preview is unavailable.
+      </div>
+      <div class="file-preview-fallback-actions">
+        <a class="btn btn-primary" href="${escapedUrl}" target="_blank" rel="noopener">Open File</a>
+      </div>
+    </div>
+  `;
 }
 
 async function triggerCapabilityRefresh(partner) {

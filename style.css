@@ -1201,6 +1201,7 @@ body::before {
 
 .modal-sm { max-width: 480px; }
 .modal-lg { max-width: 840px; }
+.modal-xl { max-width: 1120px; }
 
 .modal-header {
   display: flex;
@@ -1407,6 +1408,7 @@ body::before {
 .file-link {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   width: fit-content;
   max-width: 100%;
   padding: 8px 12px;
@@ -1418,10 +1420,107 @@ body::before {
   text-decoration: none;
   border: 1px solid rgba(59,130,246,0.14);
   overflow-wrap: anywhere;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+  text-align: left;
 }
 
 .file-link:hover {
   background: rgba(59,130,246,0.12);
+}
+
+.modal-file-preview {
+  min-height: min(88vh, 820px);
+}
+
+.file-preview-body {
+  padding: 18px 20px;
+  background: #f6f9fe;
+}
+
+.file-preview-shell {
+  width: 100%;
+  min-height: 68vh;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #eef4fc;
+  border: 1px solid #dbe5f1;
+}
+
+.file-preview-shell.media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #0f172a;
+}
+
+.file-preview-frame {
+  width: 100%;
+  min-height: 68vh;
+  border: none;
+  background: white;
+}
+
+.file-preview-image-wrap,
+.file-preview-audio-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68vh;
+  border-radius: 16px;
+  background: #eef4fc;
+  border: 1px solid #dbe5f1;
+  padding: 24px;
+}
+
+.file-preview-image {
+  max-width: 100%;
+  max-height: 72vh;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  object-fit: contain;
+  background: white;
+}
+
+.file-preview-media {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 14px;
+  background: #000;
+}
+
+.file-preview-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 28px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid #dbe5f1;
+}
+
+.file-preview-fallback-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.file-preview-fallback-text {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #61728d;
+}
+
+.file-preview-fallback-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.file-preview-audio {
+  width: min(100%, 520px);
 }
 
 .detail-stack-block {
