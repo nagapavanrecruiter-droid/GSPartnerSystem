@@ -624,7 +624,7 @@ async function addPartner() {
 
     if (error) throw error;
 
-    await uploadSelectedFiles(partner.recordId, document.getElementById('f-files')?.files);
+    await uploadSelectedFiles(partner, document.getElementById('f-files')?.files);
     await triggerCapabilityRefresh(partner);
     await writeAuditLog('partner_created', partner, { source: 'portal' });
     await loadPartners();
@@ -975,7 +975,7 @@ async function saveEdit() {
 
     if (error) throw error;
 
-    await uploadSelectedFiles(updated.recordId, document.getElementById('e-files')?.files);
+    await uploadSelectedFiles(updated, document.getElementById('e-files')?.files);
     await triggerCapabilityRefresh(updated);
     await writeAuditLog('partner_updated', updated, { previous: existing });
     closeModal('editModal');
@@ -1339,12 +1339,13 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-async function uploadSelectedFiles(folderPath, files) {
+async function uploadSelectedFiles(partner, files) {
   const selectedFiles = Array.from(files || []).filter(Boolean);
   if (!selectedFiles.length) return;
   if (!canCrudAccess()) {
     throw new Error('Your account has read-only access and cannot upload files.');
   }
+  const folderPath = getPartnerStorageFolder(partner);
 
   for (const file of selectedFiles) {
     const extension = extractFileExtension(file.name);
@@ -1363,7 +1364,7 @@ async function uploadSelectedFiles(folderPath, files) {
 }
 
 async function loadPartnerFiles(partner) {
-  const folderPath = partner.recordId;
+  const folderPath = getPartnerStorageFolder(partner);
   const { data, error } = await supabaseClient.storage
     .from(CONFIG.partnerFilesBucket)
     .list(folderPath, {
@@ -1512,7 +1513,7 @@ async function triggerCapabilityRefresh(partner) {
     body: JSON.stringify({
       company: partner.company,
       recordId: partner.recordId,
-      folderPath: partner.recordId,
+      folderPath: getPartnerStorageFolder(partner),
       capabilityStatement: partner.capabilityStatement
     })
   });
@@ -1974,6 +1975,11 @@ function sanitizeFileName(value) {
     .replace(/\s+/g, '-')
     .trim()
     .slice(0, 100) || 'file';
+}
+
+function getPartnerStorageFolder(partner) {
+  const companyName = sanitizeFileName(partner?.company || 'partner');
+  return companyName || String(partner?.recordId || 'partner');
 }
 
 function extractFileExtension(name) {
