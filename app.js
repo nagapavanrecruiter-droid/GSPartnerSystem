@@ -2232,23 +2232,37 @@ function updateAuthUi() {
   const topbarAddButton = document.getElementById('topbarAddPartnerBtn');
   const databaseAddButton = document.getElementById('databaseAddPartnerBtn');
   const addNavLink = document.getElementById('navAddPartner');
+  const profileNavLink = document.getElementById('navProfile');
   if (!button) return;
 
   if (!currentUser) {
     button.textContent = 'Sign In';
+    button.classList.remove('profile-trigger-btn');
+    button.removeAttribute('title');
     adminButton?.classList.add('hidden');
     topbarAddButton?.classList.add('hidden');
     databaseAddButton?.classList.add('hidden');
     addNavLink?.classList.add('hidden');
+    profileNavLink?.classList.add('hidden');
     setSyncStatus('idle', 'Sign in required');
     return;
   }
 
-  button.textContent = 'Profile';
+  const initials = getInitials(currentUser.name || currentUser.email);
+  button.classList.add('profile-trigger-btn');
+  button.title = 'Open profile';
+  button.innerHTML = `
+    <span class="profile-trigger-avatar">${esc(initials)}</span>
+    <span class="profile-trigger-text">
+      <span class="profile-trigger-label">My Profile</span>
+      <span class="profile-trigger-meta">${esc(formatRoleLabel(currentRole))}</span>
+    </span>
+  `;
   adminButton?.classList.add('hidden');
   topbarAddButton?.classList.toggle('hidden', !canCrudAccess());
   databaseAddButton?.classList.toggle('hidden', !canCrudAccess());
   addNavLink?.classList.toggle('hidden', !canCrudAccess());
+  profileNavLink?.classList.remove('hidden');
   setSyncStatus('ready', `${formatRoleLabel(currentRole)} access`);
 }
 
@@ -2589,11 +2603,21 @@ function showToast(message, type = 'success') {
   if (!toast || !icon || !text) return;
 
   text.textContent = message;
-  icon.textContent = type === 'success' ? '?' : type === 'warning' ? '!' : '×';
+  icon.innerHTML = getToastIconSvg(type);
   toast.classList.remove('hidden');
   toast.dataset.type = type;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.add('hidden'), 3200);
+}
+
+function getToastIconSvg(type) {
+  if (type === 'success') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  }
+  if (type === 'warning') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 9-6 6"/><path d="m9 9 6 6"/><circle cx="12" cy="12" r="9"/></svg>';
 }
 
 function togglePasswordVisibility(fieldId, trigger) {
