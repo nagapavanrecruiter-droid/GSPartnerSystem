@@ -2224,10 +2224,14 @@ function openProfileModal() {
     return;
   }
 
-  renderProfileModal();
-  openModal('profileModal');
-  if (canManageAccess()) {
-    loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
+  try {
+    renderProfileModal();
+    openModal('profileModal');
+    if (canManageAccess()) {
+      loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
+    }
+  } catch (error) {
+    showToast(`Profile could not be opened. ${extractErrorMessage(error)}`, 'error');
   }
 }
 
@@ -2259,7 +2263,7 @@ function updateAuthUi() {
   button.innerHTML = `
     <span class="profile-trigger-avatar">${esc(initials)}</span>
     <span class="profile-trigger-text">
-      <span class="profile-trigger-label">My Profile</span>
+      <span class="profile-trigger-label">${esc(currentUser.name || currentUser.email)}</span>
       <span class="profile-trigger-meta">${esc(formatRoleLabel(currentRole))}</span>
     </span>
   `;
@@ -2280,7 +2284,7 @@ function renderProfileModal() {
   const recentPartners = stats.partners.slice(0, 5).map((partner) => `
     <button type="button" class="profile-partner-row" onclick="closeModal('profileModal'); openViewModal('${escAttr(partner.recordId)}')">
       <span>${esc(partner.company)}</span>
-      <span class="status-pill ${statusClass(partner.status)}">${esc(partner.status)}</span>
+      <span class="status-pill ${statusClassName(partner.status)}">${esc(partner.status)}</span>
     </button>
   `).join('');
 
