@@ -1206,6 +1206,43 @@ body::before {
   box-shadow: var(--shadow-sm);
 }
 
+.auth-forgot-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 247, 255, 0.96));
+}
+
+.auth-forgot-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-dark);
+  background: rgba(22, 196, 170, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(22, 196, 170, 0.12);
+  flex-shrink: 0;
+}
+
+.auth-forgot-copy h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.auth-forgot-copy p {
+  margin: 0;
+  font-size: 0.79rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
 .form-textarea { resize: vertical; min-height: 80px; }
 
 .form-actions {

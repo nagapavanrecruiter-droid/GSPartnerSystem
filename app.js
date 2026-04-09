@@ -8,9 +8,10 @@ const CONFIG = {
   superAdminDomain: 'gensigma.com',
   supabaseUrl: 'https://rfkjolbmkfnsgdgxbhxq.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJma2pvbGJta2Zuc2dkZ3hiaHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTA1MDgsImV4cCI6MjA4OTk2NjUwOH0.lqObEPXshQehkfKJgpAn7c-VOXcM6fNkkY904JCULdo',
-  authStatusApiUrl: '/api/auth-status',
+  passwordResetRedirectUrl: '',
   signupRequestApiUrl: '/api/signup-request',
   userAdminApiUrl: '/api/admin-users',
+  partnerFilesApiUrl: '/api/partner-files',
   partnerFilesBucket: 'partner-files',
   readerGroups: ['PartnerPortal_Readers'],
   editorGroups: ['PartnerPortal_BD_Owners', 'PartnerPortal_Admins'],
@@ -66,6 +67,7 @@ let supabaseClient = null;
 let authMode = 'signin';
 let recoverySessionActive = false;
 let currentAccessLevel = 'read';
+let currentFilePreviewObjectUrl = '';
 
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSupabase();
@@ -94,8 +96,8 @@ function initializeSupabase() {
 
   supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey, {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true
+      persistSession: false,
+      autoRefreshToken: false
     }
   });
 
@@ -192,6 +194,11 @@ function getPortalUrl() {
     : `${window.location.origin}${window.location.pathname}`;
 }
 
+function getPasswordResetRedirectUrl() {
+  const configured = String(CONFIG.passwordResetRedirectUrl || '').trim();
+  return configured || getPortalUrl();
+}
+
 function getAuthFlowType() {
   const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
   const search = new URLSearchParams(window.location.search || '');
@@ -210,16 +217,6 @@ async function signIn() {
     if (!password) {
       throw new Error('Password is required.');
     }
-    const authStatus = await fetchAuthStatus(email);
-    if (!authStatus.exists) {
-      throw new Error('No portal account exists for this email. Use Sign Up first.');
-    }
-    if (authStatus.status === 'pending') {
-      throw new Error('Your access request is pending. Please wait for admin approval.');
-    }
-    if (authStatus.status === 'rejected') {
-      throw new Error('Your access request was rejected. Please contact an administrator.');
-    }
     setAuthStatus('info', 'Signing you in...');
     const { data, error } = await supabaseClient.auth.signInWithPassword({
       email,
@@ -231,7 +228,25 @@ async function signIn() {
     currentUser = normalizeUser(data.user);
     accessToken = data.session?.access_token || '';
     validateCompanyEmail(currentUser.email);
-    await resolveRole();
+    try {
+      await resolveRole();
+    } catch (roleError) {
+      if (extractErrorMessage(roleError).includes('No access profile was found')) {
+        await createSignupRequest({
+          user_id: currentUser.id,
+          email: currentUser.email,
+          full_name: data.user?.user_metadata?.full_name || currentUser.name || currentUser.email,
+          requested_role: data.user?.user_metadata?.requested_role || 'business_development_executive'
+        });
+        await supabaseClient.auth.signOut();
+        resetPortalState();
+        updateAuthUi();
+        setSyncStatus('idle', 'Access request pending');
+        setAuthStatus('success', 'Email confirmed. Your access request is now pending admin approval.');
+        return;
+      }
+      throw roleError;
+    }
     await tryLoadPartners();
     closeModal('authModal');
     updateAuthUi();
@@ -261,27 +276,17 @@ async function signUp() {
     if (!fullName) {
       throw new Error('Full Name is required for sign up.');
     }
-    const existingStatus = await fetchAuthStatus(email);
-    if (existingStatus.exists) {
-      throw new Error('An account request already exists for this email. Sign in instead or contact an administrator.');
-    }
 
     setAuthStatus('info', 'Creating your account and sending a confirmation email...');
-    const approvedAccessAdminCount = await getApprovedAccessAdminCount();
-    const shouldBootstrapSharedAdmin =
-      requestedRole === 'shared_admin' &&
-      CONFIG.adminAllowedDomains.map((entry) => entry.toLowerCase()).includes(email.split('@')[1] || '') &&
-      approvedAccessAdminCount === 0;
-    const shouldBootstrapSuperAdmin =
-      requestedRole === 'super_admin' &&
-      email.endsWith(`@${CONFIG.superAdminDomain}`) &&
-      approvedAccessAdminCount === 0;
 
     const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        data: {
+          full_name: fullName,
+          requested_role: requestedRole
+        },
         emailRedirectTo: getPortalUrl()
       }
     });
@@ -291,25 +296,11 @@ async function signUp() {
       throw new Error('Signup request was created, but the user ID was not returned.');
     }
 
-    await createSignupRequest({
-      user_id: data.user.id,
-      email,
-      full_name: fullName,
-      requested_role: requestedRole,
-      assigned_role: shouldBootstrapSuperAdmin ? 'super_admin' : (shouldBootstrapSharedAdmin ? 'shared_admin' : 'hr_admin'),
-      status: (shouldBootstrapSuperAdmin || shouldBootstrapSharedAdmin) ? 'approved' : 'pending',
-      shared_admin: shouldBootstrapSharedAdmin
-    });
-
     await supabaseClient.auth.signOut();
     resetAuthForm(true);
     setAuthStatus(
       'success',
-      shouldBootstrapSuperAdmin
-        ? `Your account was created. Check <strong>${esc(email)}</strong> and confirm your email before signing in.`
-        : shouldBootstrapSharedAdmin
-          ? `Your shared admin account was created. Check <strong>${esc(email)}</strong> and confirm your email before signing in.`
-          : `Your signup request was created. Check <strong>${esc(email)}</strong>, confirm your email, then wait for admin approval.`
+      `Your account was created. Check <strong>${esc(email)}</strong>, confirm your email, then sign in once to submit the access request for admin approval.`
     );
   } catch (error) {
     handleError(error, 'Portal sign-up failed.');
@@ -320,14 +311,10 @@ async function startPasswordReset() {
   try {
     const email = readValue('authEmail').toLowerCase();
     validateAllowedDomain(email);
-    const authStatus = await fetchAuthStatus(email);
-    if (!authStatus.exists) {
-      throw new Error('No portal account exists for this email. Use Sign Up first.');
-    }
 
     setAuthStatus('info', 'Sending password reset email...');
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-      redirectTo: getPortalUrl()
+      redirectTo: getPasswordResetRedirectUrl()
     });
 
     if (error) throw error;
@@ -716,7 +703,7 @@ function buildViewModalHtml(partner, files) {
     : '<span class="empty-text">No opportunities added</span>';
   const fileHtml = files.length
     ? files.map((file) => `
-        <button class="file-link" type="button" onclick="openFilePreview('${escAttr(file.name)}', '${escAttr(file.webUrl)}')">
+        <button class="file-link" type="button" onclick="openFilePreview('${escAttr(file.name)}', '${escAttr(partner.recordId)}')">
           ${esc(file.name)}
         </button>
       `).join('')
@@ -1364,52 +1351,66 @@ async function uploadSelectedFiles(partner, files) {
 }
 
 async function loadPartnerFiles(partner) {
-  const folderPath = getPartnerStorageFolder(partner);
-  const { data, error } = await supabaseClient.storage
-    .from(CONFIG.partnerFilesBucket)
-    .list(folderPath, {
-      limit: 100,
-      offset: 0,
-      sortBy: { column: 'name', order: 'desc' }
-    });
+  const token = await acquireToken();
+  if (!token) {
+    throw new Error('Sign in again to load partner files.');
+  }
+  const response = await fetch(`${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partner.recordId)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
 
-  if (error) throw error;
-
-  const files = await Promise.all((data || [])
-    .filter((entry) => entry.name && !entry.id?.endsWith('/'))
-    .map(async (entry) => {
-      const path = `${folderPath}/${entry.name}`;
-      const signed = await supabaseClient.storage
-        .from(CONFIG.partnerFilesBucket)
-        .createSignedUrl(path, 60 * 60);
-
-      return {
-        name: entry.name,
-        webUrl: signed.data?.signedUrl || '#'
-      };
-    }));
-
-  return files.filter((file) => file.webUrl && file.webUrl !== '#');
-}
-
-function openFilePreview(name, url) {
-  const safeName = String(name || 'Partner File');
-  const safeUrl = String(url || '');
-  if (!safeUrl) {
-    showToast('File preview is unavailable for this document.', 'warning');
-    return;
+  if (!response.ok) {
+    throw new Error(await response.text() || 'Could not load partner files.');
   }
 
-  const extension = extractFileExtension(safeName);
+  const data = await response.json();
+  return Array.isArray(data.files) ? data.files.filter((file) => file?.name) : [];
+}
+
+async function openFilePreview(name, partnerId) {
+  const safeName = String(name || 'Partner File');
   const previewBody = document.getElementById('filePreviewBody');
   const title = document.getElementById('filePreviewTitle');
   const openLink = document.getElementById('filePreviewOpenLink');
   if (!previewBody || !title || !openLink) return;
 
-  title.textContent = safeName;
-  openLink.href = safeUrl;
-  previewBody.innerHTML = buildFilePreviewHtml(safeName, safeUrl, extension);
-  openModal('filePreviewModal');
+  try {
+    const token = await acquireToken();
+    if (!token) {
+      throw new Error('Sign in again to preview files.');
+    }
+
+    title.textContent = safeName;
+    previewBody.innerHTML = '<div class="file-preview-loading">Loading secure file preview...</div>';
+    openLink.href = '#';
+    openLink.setAttribute('download', safeName);
+    openModal('filePreviewModal');
+
+    const response = await fetch(
+      `${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partnerId)}&file=${encodeURIComponent(safeName)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text() || 'File preview is unavailable.');
+    }
+
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const fileBlob = await response.blob();
+    revokeFilePreviewObjectUrl();
+    currentFilePreviewObjectUrl = URL.createObjectURL(fileBlob);
+    openLink.href = currentFilePreviewObjectUrl;
+    previewBody.innerHTML = buildFilePreviewHtml(safeName, currentFilePreviewObjectUrl, extractFileExtension(safeName), contentType);
+  } catch (error) {
+    previewBody.innerHTML = `<div class="file-preview-fallback-text">${esc(extractErrorMessage(error))}</div>`;
+    showToast(`File preview failed. ${extractErrorMessage(error)}`, 'error');
+  }
 }
 
 function closeFilePreview() {
@@ -1419,10 +1420,18 @@ function closeFilePreview() {
   if (previewBody) previewBody.innerHTML = '';
   if (title) title.textContent = 'File Preview';
   if (openLink) openLink.href = '#';
+  revokeFilePreviewObjectUrl();
   closeModal('filePreviewModal');
 }
 
-function buildFilePreviewHtml(name, url, extension) {
+function revokeFilePreviewObjectUrl() {
+  if (currentFilePreviewObjectUrl) {
+    URL.revokeObjectURL(currentFilePreviewObjectUrl);
+    currentFilePreviewObjectUrl = '';
+  }
+}
+
+function buildFilePreviewHtml(name, url, extension, contentType = '') {
   const ext = String(extension || '').toLowerCase();
   const escapedUrl = escAttr(url);
   const escapedName = esc(name);
@@ -1483,10 +1492,24 @@ function buildFilePreviewHtml(name, url, extension) {
   }
 
   if (officeExts.has(ext)) {
-    const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+    return `
+      <div class="file-preview-fallback">
+        <div class="file-preview-fallback-title">${escapedName}</div>
+        <div class="file-preview-fallback-text">
+          Inline preview is disabled for Office documents to keep confidential files inside the portal trust boundary.
+          Use the secure open action below.
+        </div>
+        <div class="file-preview-fallback-actions">
+          <a class="btn btn-primary" href="${escapedUrl}" download="${escAttr(name)}">Open File</a>
+        </div>
+      </div>
+    `;
+  }
+
+  if (contentType.startsWith('text/')) {
     return `
       <div class="file-preview-shell">
-        <iframe class="file-preview-frame" src="${escAttr(officeViewerUrl)}" title="${escapedName}"></iframe>
+        <iframe class="file-preview-frame" src="${escapedUrl}" title="${escapedName}"></iframe>
       </div>
     `;
   }
@@ -1537,9 +1560,16 @@ async function loadPartnerInsights(recordId, mode) {
   panel.innerHTML = 'Generating internal AI output...';
 
   try {
+    const token = await acquireToken();
+    if (!token) {
+      throw new Error('Sign in again to generate internal partner insights.');
+    }
     const response = await fetch(CONFIG.insightsApiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
       body: JSON.stringify({ recordId, mode })
     });
 
@@ -1598,11 +1628,6 @@ function canCrudAccess() {
   return canManageAccess() || currentAccessLevel === 'edit';
 }
 
-async function upsertPortalUser(profile) {
-  const { error } = await supabaseClient.from('portal_users').upsert(profile, { onConflict: 'user_id' });
-  if (error) throw error;
-}
-
 async function writeAuditLog(action, partner, extra = {}) {
   try {
     const payload = {
@@ -1642,16 +1667,6 @@ async function getApprovedSuperAdminCount() {
 
   if (error) throw error;
   return count || 0;
-}
-
-async function getApprovedAccessAdminCount() {
-  const { data, error } = await supabaseClient
-    .from('portal_users')
-    .select('user_id, assigned_role, shared_admin')
-    .eq('status', 'approved');
-
-  if (error) throw error;
-  return (data || []).filter((user) => user.shared_admin || user.assigned_role === 'super_admin').length;
 }
 
 async function openAdminModal() {
@@ -1764,22 +1779,6 @@ async function updatePortalUserAccess(userId, email, status) {
   } catch (error) {
     showToast(`Access update failed. ${extractErrorMessage(error)}`, 'error');
   }
-}
-
-async function fetchAuthStatus(email) {
-  const response = await fetch(CONFIG.authStatusApiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ email })
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text() || 'Could not verify account status.');
-  }
-
-  return response.json();
 }
 
 async function createSignupRequest(profile) {
@@ -2062,7 +2061,9 @@ function showAuthHint() {
   setAuthStatus(
     'info',
     authMode === 'signup'
-      ? `Create your portal account with your approved company email and a password, then confirm the email from your inbox. The first approved <strong>Super Admin</strong> must use <strong>@${esc(CONFIG.superAdminDomain)}</strong>.`
+      ? 'Create your portal account with your approved company email and a password, then confirm the email from your inbox before an administrator approves access.'
+      : authMode === 'forgot'
+        ? 'Enter your approved work email to receive a secure password reset link.'
       : authMode === 'reset'
         ? 'Enter your new password to complete the secure password reset flow.'
         : 'Sign in with your approved company email and password after your email is confirmed and your access request is approved.'
@@ -2103,6 +2104,7 @@ function openModal(id) {
 function closeModal(id) {
   document.getElementById(id)?.classList.add('hidden');
   if (id === 'authModal' && !recoverySessionActive) resetAuthForm(true);
+  if (id === 'filePreviewModal') revokeFilePreviewObjectUrl();
 }
 
 function resetAuthForm(resetMode = false) {
@@ -2145,9 +2147,10 @@ function updateSelectedFilesList(inputId, listId) {
 }
 
 function switchAuthMode(mode) {
-  authMode = ['signup', 'reset'].includes(mode) ? mode : 'signin';
+  authMode = ['signup', 'forgot', 'reset'].includes(mode) ? mode : 'signin';
   document.getElementById('signInModeBtn')?.classList.toggle('active', authMode === 'signin');
   document.getElementById('signUpModeBtn')?.classList.toggle('active', authMode === 'signup');
+  document.getElementById('authForgotHeader')?.classList.toggle('hidden', authMode !== 'forgot');
   document.querySelectorAll('.auth-signup-only').forEach((field) => {
     field.classList.toggle('hidden', authMode !== 'signup');
   });
@@ -2157,23 +2160,30 @@ function switchAuthMode(mode) {
   document.querySelectorAll('.auth-reset-only').forEach((field) => {
     field.classList.toggle('hidden', authMode !== 'reset');
   });
-  document.getElementById('signInModeBtn')?.classList.toggle('hidden', authMode === 'reset');
-  document.getElementById('signUpModeBtn')?.classList.toggle('hidden', authMode === 'reset');
+  document.querySelectorAll('.auth-password-group').forEach((field) => {
+    field.classList.toggle('hidden', authMode === 'forgot');
+  });
+  document.getElementById('signInModeBtn')?.classList.toggle('hidden', authMode === 'reset' || authMode === 'forgot');
+  document.getElementById('signUpModeBtn')?.classList.toggle('hidden', authMode === 'reset' || authMode === 'forgot');
   const primary = document.getElementById('authPrimaryBtn');
   const switchBtn = document.getElementById('authSwitchBtn');
-  if (primary) primary.textContent = authMode === 'signup' ? 'Sign Up' : authMode === 'reset' ? 'Update Password' : 'Sign In';
+  if (primary) primary.textContent = authMode === 'signup' ? 'Sign Up' : authMode === 'forgot' ? 'Send Reset Link' : authMode === 'reset' ? 'Update Password' : 'Sign In';
   if (switchBtn) {
-    switchBtn.textContent = authMode === 'signup' ? 'Back To Sign In' : authMode === 'reset' ? 'Back To Sign In' : 'Need An Account?';
+    switchBtn.textContent = authMode === 'signup' ? 'Back To Sign In' : authMode === 'forgot' ? 'Back To Sign In' : authMode === 'reset' ? 'Back To Sign In' : 'Need An Account?';
     switchBtn.classList.toggle('hidden', false);
   }
   showAuthHint();
 }
 
 function toggleAuthMode() {
-  switchAuthMode(authMode === 'signup' || authMode === 'reset' ? 'signin' : 'signup');
+  switchAuthMode(authMode === 'signup' || authMode === 'reset' || authMode === 'forgot' ? 'signin' : 'signup');
 }
 
 async function handleAuthPrimary() {
+  if (authMode === 'forgot') {
+    await startPasswordReset();
+    return;
+  }
   if (authMode === 'reset') {
     await completePasswordReset();
     return;

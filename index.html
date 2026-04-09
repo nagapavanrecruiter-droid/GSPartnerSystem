@@ -400,11 +400,20 @@
         <button type="button" class="auth-mode-btn active" id="signInModeBtn" onclick="switchAuthMode('signin')">Sign In</button>
         <button type="button" class="auth-mode-btn" id="signUpModeBtn" onclick="switchAuthMode('signup')">Sign Up</button>
       </div>
+      <div class="auth-forgot-header hidden" id="authForgotHeader">
+        <div class="auth-forgot-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17h.01"/><path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 3-3 3"/><circle cx="12" cy="12" r="10"/></svg>
+        </div>
+        <div class="auth-forgot-copy">
+          <h4>Reset your password</h4>
+          <p>Enter your approved work email and we’ll send a secure reset link to your inbox.</p>
+        </div>
+      </div>
       <div class="form-group full-width">
         <label class="form-label">Work Email</label>
         <input type="email" id="authEmail" class="form-input" placeholder="name@company.com" />
       </div>
-      <div class="form-group full-width" style="margin-top:12px">
+      <div class="form-group full-width auth-password-group" style="margin-top:12px">
         <label class="form-label">Password</label>
         <div class="password-wrap">
           <input type="password" id="authPassword" class="form-input" placeholder="Enter your password" />
@@ -412,7 +421,7 @@
         </div>
       </div>
       <div class="auth-signin-only" style="margin-top:10px">
-        <button type="button" class="auth-inline-link" onclick="startPasswordReset()">Forgot Password?</button>
+        <button type="button" class="auth-inline-link" onclick="switchAuthMode('forgot')">Forgot Password?</button>
       </div>
       <div class="form-group full-width auth-signup-only hidden" style="margin-top:12px">
         <label class="form-label">Confirm Password <span class="form-hint">(for signup)</span></label>
