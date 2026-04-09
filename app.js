@@ -10,6 +10,7 @@ const CONFIG = {
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJma2pvbGJta2Zuc2dkZ3hiaHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTA1MDgsImV4cCI6MjA4OTk2NjUwOH0.lqObEPXshQehkfKJgpAn7c-VOXcM6fNkkY904JCULdo',
   passwordResetRedirectUrl: '',
   signupRequestApiUrl: '/api/signup-request',
+  profileApiUrl: '/api/profile',
   userAdminApiUrl: '/api/admin-users',
   partnerFilesApiUrl: '/api/partner-files',
   partnerFilesBucket: 'partner-files',
@@ -68,8 +69,14 @@ let authMode = 'signin';
 let recoverySessionActive = false;
 let currentAccessLevel = 'read';
 let currentFilePreviewObjectUrl = '';
+let userPreferences = {
+  compactTable: false,
+  reducedMotion: false
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
+  loadUserPreferences();
+  applyUserPreferences();
   initializeSupabase();
   bindUiEvents();
   setupNavigation();
@@ -118,7 +125,7 @@ function bindUiEvents() {
   document.getElementById('f-files')?.addEventListener('change', () => updateSelectedFilesList('f-files', 'f-files-list'));
   document.getElementById('authBtn')?.addEventListener('click', () => {
     if (currentUser) {
-      signOut();
+      openProfileModal();
       return;
     }
     resetAuthForm(true);
@@ -389,20 +396,61 @@ async function resolveRole() {
   if (!data) {
     throw new Error('No access profile was found for your user. Sign up first or contact an admin.');
   }
+  let accessProfile = data;
   if (data.status !== 'approved') {
     throw new Error(`Your access request is ${data.status}. Please wait for admin approval.`);
   }
-  validateAssignedRole(currentUser.email, data.shared_admin ? 'shared_admin' : (data.assigned_role || 'hr_admin'));
+  if (
+    normalizePersonKey(data.full_name) !== normalizePersonKey(currentUser.name)
+    || String(data.email || '').toLowerCase() !== String(currentUser.email || '').toLowerCase()
+  ) {
+    accessProfile = await syncCurrentPortalProfile({ fullName: currentUser.name }, true) || data;
+  }
+  validateAssignedRole(currentUser.email, accessProfile.shared_admin ? 'shared_admin' : (accessProfile.assigned_role || 'hr_admin'));
 
-  currentPortalAccess = data;
-  currentRole = data.shared_admin ? 'shared_admin' : (data.assigned_role || 'hr_admin');
-  currentAccessLevel = inferAccessLevel(data);
+  currentPortalAccess = accessProfile;
+  currentUser.name = accessProfile.full_name || currentUser.name;
+  currentRole = accessProfile.shared_admin ? 'shared_admin' : (accessProfile.assigned_role || 'hr_admin');
+  currentAccessLevel = inferAccessLevel(accessProfile);
 }
 
 function inferAccessLevel(accessProfile) {
   if (!accessProfile) return 'read';
   if (accessProfile.shared_admin || accessProfile.assigned_role === 'super_admin') return 'edit';
   return String(accessProfile.access_level || 'read').toLowerCase() === 'edit' ? 'edit' : 'read';
+}
+
+async function syncCurrentPortalProfile(payload = {}, silent = false) {
+  const token = await acquireToken();
+  if (!token) return null;
+
+  const response = await fetch(CONFIG.profileApiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      action: 'sync',
+      fullName: payload.fullName || currentUser?.name || ''
+    })
+  });
+
+  if (!response.ok) {
+    if (!silent) {
+      throw new Error(await response.text() || 'Could not sync profile.');
+    }
+    return null;
+  }
+
+  const data = await response.json();
+  if (data.user) {
+    currentPortalAccess = data.user;
+    currentUser.name = data.user.full_name || currentUser.name;
+    currentRole = data.user.shared_admin ? 'shared_admin' : (data.user.assigned_role || currentRole);
+    currentAccessLevel = inferAccessLevel(data.user);
+  }
+  return data.user || null;
 }
 
 function validateCompanyEmail(email) {
@@ -1670,19 +1718,14 @@ async function getApprovedSuperAdminCount() {
 }
 
 async function openAdminModal() {
-  if (!canManageAccess()) {
-    showToast('Only admins can manage access.', 'warning');
-    return;
-  }
-
-  openModal('adminModal');
-  await loadAdminUsers();
+  openProfileModal();
 }
 
-async function loadAdminUsers() {
+async function loadAdminUsers(containerId = 'adminUsersList', statusId = 'adminStatus', summaryId = '') {
   if (!canManageAccess()) return;
-  const container = document.getElementById('adminUsersList');
-  const status = document.getElementById('adminStatus');
+  const container = document.getElementById(containerId);
+  const status = document.getElementById(statusId);
+  const summary = summaryId ? document.getElementById(summaryId) : null;
   if (!container || !status) return;
 
   try {
@@ -1701,30 +1744,51 @@ async function loadAdminUsers() {
     const payload = await response.json();
     const data = payload.users || [];
 
-    status.textContent = 'Approve pending users or update roles.';
-    container.innerHTML = (data || []).map((user) => `
-      <div class="admin-user-card">
-        <div class="admin-user-email">${esc(user.email)}</div>
-        <div class="admin-user-meta">
-          Requested: ${esc(formatRoleLabel(user.requested_role || 'hr_admin'))} | Current: ${esc(formatRoleLabel(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin')))} | Access: ${esc(formatAccessLabel(user.access_level || inferAccessLevel(user)))} | Status: ${esc(user.status || 'pending')}
-        </div>
-        <div class="admin-user-actions">
-          <select id="admin-role-${escAttr(user.user_id)}" class="filter-select">
-            ${buildAdminRoleOptions(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin'))}
-          </select>
-          <select id="admin-access-${escAttr(user.user_id)}" class="filter-select">
-            <option value="read" ${String(user.access_level || inferAccessLevel(user)) === 'read' ? 'selected' : ''}>Read Access</option>
-            <option value="edit" ${String(user.access_level || inferAccessLevel(user)) === 'edit' ? 'selected' : ''}>Edit Access</option>
-          </select>
-          <button class="btn btn-outline btn-sm" onclick="approvePortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="rejectPortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Reject</button>
-        </div>
-      </div>
-    `).join('') || '<div class="empty-text">No portal users found.</div>';
+    status.textContent = containerId === 'profileAdminUsersList'
+      ? 'Manage access across the whole company team.'
+      : 'Approve pending users or update roles.';
+    if (summary) {
+      summary.innerHTML = buildAdminSummaryHtml(data);
+    }
+    container.innerHTML = buildAdminUsersMarkup(data);
   } catch (error) {
     status.textContent = `Could not load portal users. ${extractErrorMessage(error)}`;
     container.innerHTML = '';
+    if (summary) summary.innerHTML = '';
   }
+}
+
+function buildAdminUsersMarkup(data) {
+  return (data || []).map((user) => `
+    <div class="admin-user-card">
+      <div class="admin-user-email">${esc(user.email)}</div>
+      <div class="admin-user-meta">
+        Requested: ${esc(formatRoleLabel(user.requested_role || 'hr_admin'))} | Current: ${esc(formatRoleLabel(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin')))} | Access: ${esc(formatAccessLabel(user.access_level || inferAccessLevel(user)))} | Status: ${esc(user.status || 'pending')}
+      </div>
+      <div class="admin-user-actions">
+        <select id="admin-role-${escAttr(user.user_id)}" class="filter-select">
+          ${buildAdminRoleOptions(user.shared_admin ? 'shared_admin' : (user.assigned_role || 'hr_admin'))}
+        </select>
+        <select id="admin-access-${escAttr(user.user_id)}" class="filter-select">
+          <option value="read" ${String(user.access_level || inferAccessLevel(user)) === 'read' ? 'selected' : ''}>Read Access</option>
+          <option value="edit" ${String(user.access_level || inferAccessLevel(user)) === 'edit' ? 'selected' : ''}>Edit Access</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="approvePortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Approve</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectPortalUser('${escAttr(user.user_id)}', '${escAttr(user.email)}')">Reject</button>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-text">No portal users found.</div>';
+}
+
+function buildAdminSummaryHtml(users) {
+  const total = users.length;
+  const pending = users.filter((user) => user.status === 'pending').length;
+  const editors = users.filter((user) => String(user.access_level || inferAccessLevel(user)) === 'edit').length;
+  return `
+    <div class="profile-admin-pill"><strong>${total}</strong><span>Total team users</span></div>
+    <div class="profile-admin-pill"><strong>${pending}</strong><span>Pending approvals</span></div>
+    <div class="profile-admin-pill"><strong>${editors}</strong><span>Edit access users</span></div>
+  `;
 }
 
 function buildAdminRoleOptions(selected) {
@@ -1776,6 +1840,9 @@ async function updatePortalUserAccess(userId, email, status) {
 
     showToast('User access updated.', 'success');
     await loadAdminUsers();
+    if (!document.getElementById('profileModal')?.classList.contains('hidden')) {
+      await loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
+    }
   } catch (error) {
     showToast(`Access update failed. ${extractErrorMessage(error)}`, 'error');
   }
@@ -1795,6 +1862,81 @@ async function createSignupRequest(profile) {
   }
 
   return response.json();
+}
+
+async function saveProfileName() {
+  try {
+    await ensureSignedIn();
+    const fullName = readValue('profileFullName');
+    if (!fullName) {
+      throw new Error('Display Name is required.');
+    }
+
+    const { error } = await supabaseClient.auth.updateUser({
+      data: { full_name: fullName }
+    });
+    if (error) throw error;
+
+    currentUser.name = fullName;
+    await syncCurrentPortalProfile({ fullName });
+    renderProfileModal();
+    setProfileStatus('success', 'Your display name has been updated.');
+  } catch (error) {
+    setProfileStatus('error', extractErrorMessage(error));
+    showToast(`Profile update failed. ${extractErrorMessage(error)}`, 'error');
+  }
+}
+
+async function changeProfileEmail() {
+  try {
+    await ensureSignedIn();
+    const newEmail = readValue('profileNewEmail').toLowerCase();
+    const currentPassword = readValue('profileCurrentPassword');
+    if (!newEmail) {
+      throw new Error('Enter the new work email you want to use.');
+    }
+    validateAllowedDomain(newEmail);
+    if (!currentPassword) {
+      throw new Error('Enter your current password to verify this change.');
+    }
+
+    const { error: reauthError } = await supabaseClient.auth.signInWithPassword({
+      email: currentUser.email,
+      password: currentPassword
+    });
+    if (reauthError) throw reauthError;
+
+    const { error } = await supabaseClient.auth.updateUser({ email: newEmail });
+    if (error) throw error;
+
+    const emailField = document.getElementById('profileNewEmail');
+    const passwordField = document.getElementById('profileCurrentPassword');
+    if (emailField) emailField.value = '';
+    if (passwordField) passwordField.value = '';
+    setProfileStatus('success', `Confirmation was sent to ${esc(newEmail)}. Approve the email change from your inbox, then sign in again.`);
+    showToast('Email change verification sent.', 'success');
+  } catch (error) {
+    setProfileStatus('error', extractErrorMessage(error));
+    showToast(`Email change failed. ${extractErrorMessage(error)}`, 'error');
+  }
+}
+
+function openPasswordResetFromProfile() {
+  closeModal('profileModal');
+  resetAuthForm(true);
+  const emailField = document.getElementById('authEmail');
+  if (emailField) emailField.value = currentUser?.email || '';
+  switchAuthMode('forgot');
+  openModal('authModal');
+}
+
+function setProfileStatus(type, message) {
+  const el = document.getElementById('profileStatus');
+  if (!el) return;
+  el.className = 'config-status';
+  if (type === 'error') el.classList.add('error');
+  if (type === 'success') el.classList.add('success');
+  el.innerHTML = message;
 }
 
 function clearAddForm() {
@@ -2070,6 +2212,20 @@ function showAuthHint() {
   );
 }
 
+function openProfileModal() {
+  if (!currentUser) {
+    resetAuthForm(true);
+    openModal('authModal');
+    return;
+  }
+
+  renderProfileModal();
+  openModal('profileModal');
+  if (canManageAccess()) {
+    loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
+  }
+}
+
 function updateAuthUi() {
   const button = document.getElementById('authBtn');
   const adminButton = document.getElementById('adminBtn');
@@ -2088,12 +2244,234 @@ function updateAuthUi() {
     return;
   }
 
-  button.textContent = 'Sign Out';
-  adminButton?.classList.toggle('hidden', !canManageAccess());
+  button.textContent = 'Profile';
+  adminButton?.classList.add('hidden');
   topbarAddButton?.classList.toggle('hidden', !canCrudAccess());
   databaseAddButton?.classList.toggle('hidden', !canCrudAccess());
   addNavLink?.classList.toggle('hidden', !canCrudAccess());
   setSyncStatus('ready', `${formatRoleLabel(currentRole)} access`);
+}
+
+function renderProfileModal() {
+  const body = document.getElementById('profileModalBody');
+  if (!body || !currentUser) return;
+
+  const stats = getCurrentUserStats();
+  const initials = getInitials(currentUser.name || currentUser.email || 'U');
+  const recentPartners = stats.partners.slice(0, 5).map((partner) => `
+    <button type="button" class="profile-partner-row" onclick="closeModal('profileModal'); openViewModal('${escAttr(partner.recordId)}')">
+      <span>${esc(partner.company)}</span>
+      <span class="status-pill ${statusClass(partner.status)}">${esc(partner.status)}</span>
+    </button>
+  `).join('');
+
+  body.innerHTML = `
+    <div class="profile-shell">
+      <div class="profile-hero">
+        <div class="profile-hero-main">
+          <div class="profile-avatar">${esc(initials)}</div>
+          <div class="profile-hero-copy">
+            <h4>${esc(currentUser.name || currentUser.email)}</h4>
+            <p>${esc(currentUser.email)}</p>
+          </div>
+        </div>
+        <div class="profile-badges">
+          <span class="profile-badge ${canManageAccess() ? 'admin' : ''}">${esc(formatRoleLabel(currentRole))}</span>
+          <span class="profile-badge">${esc(formatAccessLabel(currentAccessLevel))}</span>
+        </div>
+      </div>
+
+      <div class="profile-grid">
+        <div class="profile-column">
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h4 class="profile-card-title">Personal performance</h4>
+              <p class="profile-card-subtitle">Your sourcing footprint and outcome totals.</p>
+            </div>
+            <div class="profile-card-body">
+              <div class="profile-stats">
+                <div class="profile-stat"><div class="profile-stat-value">${stats.total}</div><div class="profile-stat-label">Partners sourced</div></div>
+                <div class="profile-stat"><div class="profile-stat-value">${stats.won}</div><div class="profile-stat-label">Contracts won</div></div>
+                <div class="profile-stat"><div class="profile-stat-value">${stats.lost}</div><div class="profile-stat-label">Contracts lost</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h4 class="profile-card-title">Account details</h4>
+              <p class="profile-card-subtitle">Keep your identity and contact details current.</p>
+            </div>
+            <div class="profile-card-body profile-section-stack">
+              <div class="profile-inline-form">
+                <div class="form-group full-width">
+                  <label class="form-label">Display Name</label>
+                  <input type="text" id="profileFullName" class="form-input" value="${escAttr(currentUser.name || '')}" placeholder="Your full name" />
+                </div>
+                <div class="profile-inline-actions">
+                  <button class="btn btn-primary btn-sm" onclick="saveProfileName()">Save Name</button>
+                </div>
+              </div>
+
+              <div class="profile-inline-form">
+                <div class="form-group full-width">
+                  <label class="form-label">Current Work Email</label>
+                  <input type="email" class="form-input" value="${escAttr(currentUser.email || '')}" disabled />
+                </div>
+                <div class="form-group full-width">
+                  <label class="form-label">New Work Email</label>
+                  <input type="email" id="profileNewEmail" class="form-input" placeholder="new.name@gensigma.com" />
+                </div>
+                <div class="form-group full-width">
+                  <label class="form-label">Current Password</label>
+                  <div class="password-wrap">
+                    <input type="password" id="profileCurrentPassword" class="form-input" placeholder="Re-enter your current password" />
+                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility('profileCurrentPassword', this)">Show</button>
+                  </div>
+                </div>
+                <div class="profile-inline-actions">
+                  <button class="btn btn-outline btn-sm" onclick="changeProfileEmail()">Update Email</button>
+                </div>
+              </div>
+
+              <div class="profile-inline-form">
+                <div class="form-group full-width">
+                  <label class="form-label">Password</label>
+                  <input type="text" class="form-input" value="Password changes use the secure reset flow." disabled />
+                </div>
+                <div class="profile-inline-actions">
+                  <button class="btn btn-outline btn-sm" onclick="openPasswordResetFromProfile()">Update Password</button>
+                </div>
+              </div>
+              <div class="config-status" id="profileStatus"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-column">
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h4 class="profile-card-title">Your partner list</h4>
+              <p class="profile-card-subtitle">Partners currently associated with your sourcing history.</p>
+            </div>
+            <div class="profile-card-body">
+              <div class="profile-partner-list">
+                ${recentPartners || '<div class="empty-text">No sourced partners assigned yet.</div>'}
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-card">
+            <div class="profile-card-head">
+              <h4 class="profile-card-title">Settings</h4>
+              <p class="profile-card-subtitle">Make small workspace adjustments for your daily workflow.</p>
+            </div>
+            <div class="profile-card-body">
+              <div class="profile-settings">
+                <label class="setting-row">
+                  <span class="setting-row-copy">
+                    <h5>Compact table density</h5>
+                    <p>Reduce row height in the partner database.</p>
+                  </span>
+                  <input type="checkbox" class="setting-toggle" ${userPreferences.compactTable ? 'checked' : ''} onchange="updateUserPreference('compactTable', this.checked)" />
+                </label>
+                <label class="setting-row">
+                  <span class="setting-row-copy">
+                    <h5>Reduced motion</h5>
+                    <p>Minimize interface motion for a steadier workspace.</p>
+                  </span>
+                  <input type="checkbox" class="setting-toggle" ${userPreferences.reducedMotion ? 'checked' : ''} onchange="updateUserPreference('reducedMotion', this.checked)" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          ${canManageAccess() ? `
+            <div class="profile-card">
+              <div class="profile-card-head">
+                <h4 class="profile-card-title">Company team management</h4>
+                <p class="profile-card-subtitle">Approve users, assign role titles, and control read or edit access.</p>
+              </div>
+              <div class="profile-card-body">
+                <div class="profile-admin-summary" id="profileAdminSummary"></div>
+                <div class="config-status" id="profileAdminStatus"></div>
+                <div id="profileAdminUsersList" style="margin-top:12px"></div>
+                <div class="profile-inline-actions" style="margin-top:14px">
+                  <button class="btn btn-outline btn-sm" onclick="loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary')">Refresh Team</button>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getCurrentUserStats() {
+  const matches = partners.filter((partner) => partnerMatchesCurrentUser(partner));
+  return {
+    total: matches.length,
+    won: matches.filter((partner) => partner.status === 'Contract Won').length,
+    lost: matches.filter((partner) => partner.status === 'Contract Lost').length,
+    partners: matches
+  };
+}
+
+function partnerMatchesCurrentUser(partner) {
+  const employee = normalizePersonKey(partner?.employee);
+  const fullName = normalizePersonKey(currentPortalAccess?.full_name || currentUser?.name);
+  const shortName = normalizePersonKey(String((currentPortalAccess?.full_name || currentUser?.name || '')).split(/\s+/)[0] || currentUser?.name);
+  return Boolean(employee) && (employee === fullName || employee === shortName);
+}
+
+function normalizePersonKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function getInitials(value) {
+  return String(value || 'U')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'U';
+}
+
+function loadUserPreferences() {
+  try {
+    const raw = window.localStorage.getItem('partnerhub_preferences');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    userPreferences = {
+      compactTable: Boolean(parsed.compactTable),
+      reducedMotion: Boolean(parsed.reducedMotion)
+    };
+  } catch (error) {
+    userPreferences = { compactTable: false, reducedMotion: false };
+  }
+}
+
+function saveUserPreferences() {
+  try {
+    window.localStorage.setItem('partnerhub_preferences', JSON.stringify(userPreferences));
+  } catch (error) {
+    console.warn('Could not persist user preferences.', error);
+  }
+}
+
+function applyUserPreferences() {
+  document.body.classList.toggle('pref-compact', Boolean(userPreferences.compactTable));
+  document.body.classList.toggle('pref-reduced-motion', Boolean(userPreferences.reducedMotion));
+}
+
+function updateUserPreference(key, value) {
+  userPreferences[key] = Boolean(value);
+  saveUserPreferences();
+  applyUserPreferences();
 }
 
 function openModal(id) {
@@ -2269,10 +2647,16 @@ window.handleAuthPrimary = handleAuthPrimary;
 window.addPartner = addPartner;
 window.filterPartners = filterPartners;
 window.exportCSV = exportCSV;
+window.openProfileModal = openProfileModal;
 window.openAdminModal = openAdminModal;
 window.loadAdminUsers = loadAdminUsers;
 window.approvePortalUser = approvePortalUser;
 window.rejectPortalUser = rejectPortalUser;
+window.saveProfileName = saveProfileName;
+window.changeProfileEmail = changeProfileEmail;
+window.openPasswordResetFromProfile = openPasswordResetFromProfile;
+window.updateUserPreference = updateUserPreference;
+window.signOut = signOut;
 window.loadPartnerInsights = loadPartnerInsights;
 window.openViewModal = openViewModal;
 window.openEditModal = openEditModal;

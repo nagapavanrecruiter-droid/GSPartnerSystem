@@ -481,6 +481,20 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="profileModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">My Profile</h3>
+      <button class="modal-close" onclick="closeModal('profileModal')">&#10005;</button>
+    </div>
+    <div class="modal-body" id="profileModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('profileModal')">Close</button>
+      <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="viewModal">
   <div class="modal modal-lg">
     <div class="modal-header">
