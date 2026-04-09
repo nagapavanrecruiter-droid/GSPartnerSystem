@@ -486,6 +486,11 @@ function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.addEventListener('click', (event) => {
       event.preventDefault();
+      if (item.id === 'navProfile') {
+        openProfileModal();
+        closeSidebar();
+        return;
+      }
       navigate(item.getAttribute('data-page'));
       closeSidebar();
     });
