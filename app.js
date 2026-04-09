@@ -2268,9 +2268,49 @@ function renderProfilePage() {
 
   const stats = getCurrentUserStats();
   const initials = getInitials(currentUser.name || currentUser.email || 'U');
+  const performanceCards = [
+    {
+      value: stats.total,
+      label: 'Partners sourced',
+      meta: stats.total ? `${stats.active} active in motion` : 'No sourced partners yet',
+      tone: 'teal'
+    },
+    {
+      value: stats.won,
+      label: 'Contracts won',
+      meta: `${stats.winRate}% win rate`,
+      tone: 'green'
+    },
+    {
+      value: stats.lost,
+      label: 'Contracts lost',
+      meta: stats.closed ? `${stats.closed} closed outcomes` : 'No closed outcomes yet',
+      tone: 'rose'
+    }
+  ];
+  if (stats.active > 0) {
+    performanceCards.push({
+      value: stats.active,
+      label: 'Active pipeline',
+      meta: 'Still progressing in the system',
+      tone: 'blue'
+    });
+  }
+  const profileMomentum = stats.total
+    ? `${stats.primaryStatusLabel} is the strongest current signal across your partner book.`
+    : 'Start adding partners to build your sourcing footprint and outcome history.';
+  const statusHighlights = stats.statusHighlights.map((item) => `
+    <div class="profile-breakdown-pill">
+      <span>${esc(item.label)}</span>
+      <strong>${item.value}</strong>
+    </div>
+  `).join('');
   const recentPartners = stats.partners.slice(0, 5).map((partner) => `
     <button type="button" class="profile-partner-row" onclick="openViewModal('${escAttr(partner.recordId)}')">
-      <span>${esc(partner.company)}</span>
+      <span class="profile-partner-row-copy">
+        <strong>${esc(partner.company)}</strong>
+        <small>${esc(partner.contact || partner.email || 'Partner record')}</small>
+      </span>
       <span class="status-pill ${statusClassName(partner.status)}">${esc(partner.status)}</span>
     </button>
   `).join('');
@@ -2299,11 +2339,32 @@ function renderProfilePage() {
               <p class="profile-card-subtitle">Your sourcing footprint and outcome totals.</p>
             </div>
             <div class="profile-card-body">
-              <div class="profile-stats">
-                <div class="profile-stat"><div class="profile-stat-value">${stats.total}</div><div class="profile-stat-label">Partners sourced</div></div>
-                <div class="profile-stat"><div class="profile-stat-value">${stats.won}</div><div class="profile-stat-label">Contracts won</div></div>
-                <div class="profile-stat"><div class="profile-stat-value">${stats.lost}</div><div class="profile-stat-label">Contracts lost</div></div>
+              <div class="profile-performance-intro">
+                <div class="profile-performance-copy">
+                  <span class="profile-performance-kicker">Performance spotlight</span>
+                  <h5>${esc(stats.total ? `${stats.total} partner${stats.total === 1 ? '' : 's'} tracked under your sourcing history` : 'Your profile is ready for live partner activity')}</h5>
+                  <p>${esc(profileMomentum)}</p>
+                </div>
+                <div class="profile-performance-badges">
+                  <span class="profile-performance-badge">${esc(`${stats.winRate}% win rate`)}</span>
+                  <span class="profile-performance-badge">${esc(`${stats.active} active`)}</span>
+                </div>
               </div>
+              <div class="profile-stats">
+                ${performanceCards.map((card) => `
+                  <div class="profile-stat profile-stat-${card.tone}">
+                    <div class="profile-stat-value">${card.value}</div>
+                    <div class="profile-stat-label">${esc(card.label)}</div>
+                    <div class="profile-stat-meta">${esc(card.meta)}</div>
+                  </div>
+                `).join('')}
+              </div>
+              ${statusHighlights ? `
+                <div class="profile-performance-breakdown">
+                  <div class="profile-performance-section-title">Status mix</div>
+                  <div class="profile-breakdown-grid">${statusHighlights}</div>
+                </div>
+              ` : ''}
             </div>
           </div>
 
@@ -2398,11 +2459,30 @@ function renderProfilePage() {
 
 function getCurrentUserStats() {
   const matches = partners.filter((partner) => partnerMatchesCurrentUser(partner));
+  const statusCounts = matches.reduce((accumulator, partner) => {
+    const label = String(partner.status || 'Unknown').trim() || 'Unknown';
+    accumulator[label] = (accumulator[label] || 0) + 1;
+    return accumulator;
+  }, {});
+  const won = matches.filter((partner) => partner.status === 'Contract Won').length;
+  const lost = matches.filter((partner) => partner.status === 'Contract Lost').length;
+  const active = matches.filter((partner) => !['Contract Won', 'Contract Lost'].includes(String(partner.status || ''))).length;
+  const closed = won + lost;
+  const primaryStatus = Object.entries(statusCounts).sort((left, right) => right[1] - left[1])[0];
   return {
     total: matches.length,
-    won: matches.filter((partner) => partner.status === 'Contract Won').length,
-    lost: matches.filter((partner) => partner.status === 'Contract Lost').length,
-    partners: matches
+    won,
+    lost,
+    active,
+    closed,
+    winRate: closed ? Math.round((won / closed) * 100) : 0,
+    partners: matches,
+    statusCounts,
+    primaryStatusLabel: primaryStatus?.[0] || 'No current activity',
+    statusHighlights: Object.entries(statusCounts)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 4)
+      .map(([label, value]) => ({ label, value }))
   };
 }
 
