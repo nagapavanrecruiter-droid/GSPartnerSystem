@@ -30,7 +30,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Analytics
     </a>
-    <a href="#" class="nav-item hidden" id="navProfile" onclick="openProfileModal()">
+    <a href="#" class="nav-item hidden" id="navProfile" data-page="profile">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       My Profile
     </a>
@@ -164,6 +164,19 @@
           <div id="statusBreakdown" class="status-breakdown-grid"></div>
         </div>
       </div>
+    </section>
+
+    <section class="page hidden" id="page-profile">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">My Profile</h1>
+          <p class="page-subtitle">Manage your account, track your impact, and review team access.</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline btn-sm" onclick="signOut()">Sign Out</button>
+        </div>
+      </div>
+      <div id="profilePageContent"></div>
     </section>
 
     <section class="page hidden" id="page-database">
@@ -481,20 +494,6 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('adminModal')">Close</button>
       <button class="btn btn-primary" onclick="loadAdminUsers()">Refresh</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay hidden" id="profileModal">
-  <div class="modal modal-lg">
-    <div class="modal-header">
-      <h3 class="modal-title">My Profile</h3>
-      <button class="modal-close" onclick="closeModal('profileModal')">&#10005;</button>
-    </div>
-    <div class="modal-body" id="profileModalBody"></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('profileModal')">Close</button>
-      <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
     </div>
   </div>
 </div>

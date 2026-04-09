@@ -125,7 +125,7 @@ function bindUiEvents() {
   document.getElementById('f-files')?.addEventListener('change', () => updateSelectedFilesList('f-files', 'f-files-list'));
   document.getElementById('authBtn')?.addEventListener('click', () => {
     if (currentUser) {
-      openProfileModal();
+      navigate('profile');
       return;
     }
     resetAuthForm(true);
@@ -486,11 +486,6 @@ function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.addEventListener('click', (event) => {
       event.preventDefault();
-      if (item.id === 'navProfile') {
-        openProfileModal();
-        closeSidebar();
-        return;
-      }
       navigate(item.getAttribute('data-page'));
       closeSidebar();
     });
@@ -500,6 +495,11 @@ function setupNavigation() {
 function navigate(page) {
   if (page === 'add' && !canCrudAccess()) {
     showToast('Your account has read-only access.', 'warning');
+    return;
+  }
+  if (page === 'profile' && !currentUser) {
+    resetAuthForm(true);
+    openModal('authModal');
     return;
   }
 
@@ -512,6 +512,7 @@ function navigate(page) {
   const labels = {
     dashboard: 'Dashboard',
     analytics: 'Employee Analytics',
+    profile: 'My Profile',
     database: 'Partner Database',
     add: 'Add Partner'
   };
@@ -519,6 +520,7 @@ function navigate(page) {
 
   if (page === 'dashboard') renderDashboard();
   if (page === 'analytics') renderAnalytics();
+  if (page === 'profile') renderProfilePage();
   if (page === 'database') filterPartners();
   if (page === 'add') {
     clearAddForm();
@@ -1723,7 +1725,7 @@ async function getApprovedSuperAdminCount() {
 }
 
 async function openAdminModal() {
-  openProfileModal();
+  navigate('profile');
 }
 
 async function loadAdminUsers(containerId = 'adminUsersList', statusId = 'adminStatus', summaryId = '') {
@@ -1845,7 +1847,7 @@ async function updatePortalUserAccess(userId, email, status) {
 
     showToast('User access updated.', 'success');
     await loadAdminUsers();
-    if (!document.getElementById('profileModal')?.classList.contains('hidden')) {
+    if (!document.getElementById('page-profile')?.classList.contains('hidden')) {
       await loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
     }
   } catch (error) {
@@ -1884,7 +1886,7 @@ async function saveProfileName() {
 
     currentUser.name = fullName;
     await syncCurrentPortalProfile({ fullName });
-    renderProfileModal();
+    renderProfilePage();
     setProfileStatus('success', 'Your display name has been updated.');
   } catch (error) {
     setProfileStatus('error', extractErrorMessage(error));
@@ -1927,7 +1929,6 @@ async function changeProfileEmail() {
 }
 
 function openPasswordResetFromProfile() {
-  closeModal('profileModal');
   resetAuthForm(true);
   const emailField = document.getElementById('authEmail');
   if (emailField) emailField.value = currentUser?.email || '';
@@ -2218,21 +2219,7 @@ function showAuthHint() {
 }
 
 function openProfileModal() {
-  if (!currentUser) {
-    resetAuthForm(true);
-    openModal('authModal');
-    return;
-  }
-
-  try {
-    renderProfileModal();
-    openModal('profileModal');
-    if (canManageAccess()) {
-      loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
-    }
-  } catch (error) {
-    showToast(`Profile could not be opened. ${extractErrorMessage(error)}`, 'error');
-  }
+  navigate('profile');
 }
 
 function updateAuthUi() {
@@ -2275,14 +2262,14 @@ function updateAuthUi() {
   setSyncStatus('ready', `${formatRoleLabel(currentRole)} access`);
 }
 
-function renderProfileModal() {
-  const body = document.getElementById('profileModalBody');
+function renderProfilePage() {
+  const body = document.getElementById('profilePageContent');
   if (!body || !currentUser) return;
 
   const stats = getCurrentUserStats();
   const initials = getInitials(currentUser.name || currentUser.email || 'U');
   const recentPartners = stats.partners.slice(0, 5).map((partner) => `
-    <button type="button" class="profile-partner-row" onclick="closeModal('profileModal'); openViewModal('${escAttr(partner.recordId)}')">
+    <button type="button" class="profile-partner-row" onclick="openViewModal('${escAttr(partner.recordId)}')">
       <span>${esc(partner.company)}</span>
       <span class="status-pill ${statusClassName(partner.status)}">${esc(partner.status)}</span>
     </button>
@@ -2384,31 +2371,6 @@ function renderProfileModal() {
             </div>
           </div>
 
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h4 class="profile-card-title">Settings</h4>
-              <p class="profile-card-subtitle">Make small workspace adjustments for your daily workflow.</p>
-            </div>
-            <div class="profile-card-body">
-              <div class="profile-settings">
-                <label class="setting-row">
-                  <span class="setting-row-copy">
-                    <h5>Compact table density</h5>
-                    <p>Reduce row height in the partner database.</p>
-                  </span>
-                  <input type="checkbox" class="setting-toggle" ${userPreferences.compactTable ? 'checked' : ''} onchange="updateUserPreference('compactTable', this.checked)" />
-                </label>
-                <label class="setting-row">
-                  <span class="setting-row-copy">
-                    <h5>Reduced motion</h5>
-                    <p>Minimize interface motion for a steadier workspace.</p>
-                  </span>
-                  <input type="checkbox" class="setting-toggle" ${userPreferences.reducedMotion ? 'checked' : ''} onchange="updateUserPreference('reducedMotion', this.checked)" />
-                </label>
-              </div>
-            </div>
-          </div>
-
           ${canManageAccess() ? `
             <div class="profile-card">
               <div class="profile-card-head">
@@ -2429,6 +2391,9 @@ function renderProfileModal() {
       </div>
     </div>
   `;
+  if (canManageAccess()) {
+    loadAdminUsers('profileAdminUsersList', 'profileAdminStatus', 'profileAdminSummary');
+  }
 }
 
 function getCurrentUserStats() {
