@@ -1442,7 +1442,7 @@ async function openFilePreview(name, partnerId) {
     title.textContent = safeName;
     previewBody.innerHTML = '<div class="file-preview-loading">Loading secure file preview...</div>';
     openLink.href = '#';
-    openLink.setAttribute('download', safeName);
+    openLink.removeAttribute('download');
     openModal('filePreviewModal');
     const partner = partners.find((entry) => entry.recordId === partnerId);
 
@@ -1478,6 +1478,7 @@ function closeFilePreview() {
   if (previewBody) previewBody.innerHTML = '';
   if (title) title.textContent = 'File Preview';
   if (openLink) openLink.href = '#';
+  if (openLink) openLink.removeAttribute('download');
   revokeFilePreviewObjectUrl();
   closeModal('filePreviewModal');
 }
@@ -1554,11 +1555,11 @@ function buildFilePreviewHtml(name, url, extension, contentType = '') {
       <div class="file-preview-fallback">
         <div class="file-preview-fallback-title">${escapedName}</div>
         <div class="file-preview-fallback-text">
-          Inline preview is disabled for Office documents to keep confidential files inside the portal trust boundary.
-          Use the secure open action below.
+          PowerPoint and Office files cannot be rendered natively by browsers with full fidelity inside a secure internal-only portal.
+          The file stays in the protected preview flow, and the action below opens it in a separate browser tab instead of forcing a download.
         </div>
         <div class="file-preview-fallback-actions">
-          <a class="btn btn-primary" href="${escapedUrl}" download="${escAttr(name)}">Open File</a>
+          <a class="btn btn-primary" href="${escapedUrl}" target="_blank" rel="noopener">Open In New Tab</a>
         </div>
       </div>
     `;
