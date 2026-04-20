@@ -73,6 +73,7 @@ let userPreferences = {
   compactTable: false,
   reducedMotion: false
 };
+let profileAccessPanelOpen = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   loadUserPreferences();
@@ -521,6 +522,7 @@ function navigate(page) {
   if (page === 'dashboard') renderDashboard();
   if (page === 'analytics') renderAnalytics();
   if (page === 'profile') renderProfilePage();
+  if (page !== 'profile') profileAccessPanelOpen = false;
   if (page === 'database') filterPartners();
   if (page === 'add') {
     clearAddForm();
@@ -1410,7 +1412,7 @@ async function loadPartnerFiles(partner) {
   if (!token) {
     throw new Error('Sign in again to load partner files.');
   }
-  const response = await fetch(`${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partner.recordId)}`, {
+  const response = await fetch(`${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partner.recordId)}&company=${encodeURIComponent(partner.company || '')}`, {
     headers: {
       Authorization: `Bearer ${token}`
     }
@@ -1442,9 +1444,10 @@ async function openFilePreview(name, partnerId) {
     openLink.href = '#';
     openLink.setAttribute('download', safeName);
     openModal('filePreviewModal');
+    const partner = partners.find((entry) => entry.recordId === partnerId);
 
     const response = await fetch(
-      `${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partnerId)}&file=${encodeURIComponent(safeName)}`,
+      `${CONFIG.partnerFilesApiUrl}?partnerId=${encodeURIComponent(partnerId)}&company=${encodeURIComponent(partner?.company || '')}&file=${encodeURIComponent(safeName)}`,
       {
         headers: {
           Authorization: `Bearer ${token}`
@@ -2222,6 +2225,20 @@ function openProfileModal() {
   navigate('profile');
 }
 
+function toggleProfileAccessPanel() {
+  profileAccessPanelOpen = !profileAccessPanelOpen;
+  renderProfilePage();
+}
+
+function scrollToProfileTeamManagement() {
+  const card = document.getElementById('profileTeamManagementCard');
+  if (!card) {
+    showToast('Team management is available only for shared admins and super admins.', 'warning');
+    return;
+  }
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function updateAuthUi() {
   const button = document.getElementById('authBtn');
   const adminButton = document.getElementById('adminBtn');
@@ -2327,7 +2344,25 @@ function renderProfilePage() {
         </div>
         <div class="profile-badges">
           <span class="profile-badge ${canManageAccess() ? 'admin' : ''}">${esc(formatRoleLabel(currentRole))}</span>
-          <span class="profile-badge">${esc(formatAccessLabel(currentAccessLevel))}</span>
+          <button type="button" class="profile-badge profile-badge-button ${profileAccessPanelOpen ? 'active' : ''}" onclick="toggleProfileAccessPanel()" aria-expanded="${profileAccessPanelOpen ? 'true' : 'false'}">
+            ${esc(formatAccessLabel(currentAccessLevel))}
+          </button>
+        </div>
+      </div>
+
+      <div class="profile-access-panel ${profileAccessPanelOpen ? '' : 'hidden'}" id="profileAccessPanel">
+        <div class="profile-access-panel-copy">
+          <span class="profile-performance-kicker">Access toolkit</span>
+          <h4>${esc(currentAccessLevel === 'edit' ? 'Your account can actively work partner records.' : 'Your account is in read-only mode.')}</h4>
+          <p>${esc(currentAccessLevel === 'edit'
+            ? 'Use these quick actions to jump straight into partner creation, active records, and admin operations.'
+            : 'You can review partner data, files, analytics, and your own profile. Edit actions stay locked until an admin upgrades your access.'
+          )}</p>
+        </div>
+        <div class="profile-access-actions">
+          <button type="button" class="btn btn-primary btn-sm" onclick="navigate('database')">Open Partner Database</button>
+          ${canCrudAccess() ? '<button type="button" class="btn btn-outline btn-sm" onclick="navigate(\'add\')">Add Partner</button>' : ''}
+          ${canManageAccess() ? '<button type="button" class="btn btn-outline btn-sm" onclick="scrollToProfileTeamManagement()">Manage Team</button>' : ''}
         </div>
       </div>
 
@@ -2433,7 +2468,7 @@ function renderProfilePage() {
           </div>
 
           ${canManageAccess() ? `
-            <div class="profile-card">
+            <div class="profile-card" id="profileTeamManagementCard">
               <div class="profile-card-head">
                 <h4 class="profile-card-title">Company team management</h4>
                 <p class="profile-card-subtitle">Approve users, assign role titles, and control read or edit access.</p>
@@ -2726,6 +2761,8 @@ window.addPartner = addPartner;
 window.filterPartners = filterPartners;
 window.exportCSV = exportCSV;
 window.openProfileModal = openProfileModal;
+window.toggleProfileAccessPanel = toggleProfileAccessPanel;
+window.scrollToProfileTeamManagement = scrollToProfileTeamManagement;
 window.openAdminModal = openAdminModal;
 window.loadAdminUsers = loadAdminUsers;
 window.approvePortalUser = approvePortalUser;

@@ -1,12 +1,24 @@
 'use strict';
 
+const { applyRateLimit, getEnv, isEditActor, requireBearerToken, verifyPortalToken } = require('./_lib/security');
+
 const ALLOWED_MODES = new Set(['summary', 'score']);
 const SUPABASE_TABLE = 'partners';
 
 module.exports = async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store');
+    applyRateLimit(req, { key: 'partner-insights', windowMs: 60_000, max: 20 });
+
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed.' });
+      return;
+    }
+
+    const token = requireBearerToken(req);
+    const actor = await verifyPortalToken(token);
+    if (!isEditActor(actor)) {
+      res.status(403).json({ error: 'Not authorized for partner insights.' });
       return;
     }
 
@@ -15,7 +27,7 @@ module.exports = async (req, res) => {
     const mode = String(body.mode || '').trim();
 
     if (!recordId || !ALLOWED_MODES.has(mode)) {
-      res.status(400).json({ error: 'recordId and mode are required.' });
+      res.status(400).json({ error: 'Invalid request payload.' });
       return;
     }
 
@@ -29,16 +41,16 @@ module.exports = async (req, res) => {
     const output = await callGroq(payload);
     res.status(200).json(parseGroqOutput(output, mode));
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Partner insights failed.' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Partner insights failed.' });
   }
 };
 
 async function fetchPartner(recordId) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(recordId)}&select=id,employee,company,website,contact,email,technologies,status,opportunities,event_id,notes,capability_statement,updated_at,updated_by`;
+  const url = `${getEnv('SUPABASE_URL')}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(recordId)}&select=id,employee,company,website,contact,email,technologies,status,opportunities,event_id,notes,capability_statement,updated_at,updated_by`;
   const response = await fetch(url, {
     headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: getEnv('SUPABASE_SERVICE_ROLE_KEY'),
+      Authorization: `Bearer ${getEnv('SUPABASE_SERVICE_ROLE_KEY')}`,
       Accept: 'application/json'
     }
   });
@@ -110,7 +122,7 @@ async function callGroq(payload) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`
+      Authorization: `Bearer ${getEnv('GROQ_API_KEY')}`
     },
     body: JSON.stringify(payload)
   });
